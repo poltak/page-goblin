@@ -863,3 +863,17 @@ describe('cover', () => {
         expect(book.coverPath).toBe('OEBPS/pic.png')
     })
 })
+
+describe('creator names', () => {
+    it('removes a separator at the end of a name and leaves out a repeated name', async () => {
+        const blob = await buildEpub({
+            metadata: { creators: [] },
+            extraMetadata: `<dc:creator>Andy Weir;</dc:creator>
+                <dc:creator>William Strunk</dc:creator>
+                <dc:creator>William Strunk</dc:creator>`,
+        })
+        const book = await openEpub(blob)
+        expect(book.metadata.creators).toEqual(['Andy Weir', 'William Strunk'])
+        expect(book.metadata.author).toBe('Andy Weir, William Strunk')
+    })
+})

@@ -323,8 +323,9 @@ function readMetadata(
     const allCreators: string[] = []
     const authors: string[] = []
     for (const element of all('creator')) {
-        const name = textOf(element)
-        if (!name) continue
+        // Some tools leave a list separator at the end of a name ("Andy Weir;").
+        const name = textOf(element).replace(/[\s;,]+$/, '')
+        if (!name || allCreators.includes(name)) continue
         const role = attribute(element, 'role')
         const roles = (role ? [role] : refinements(element, 'role')).map((value) =>
             value.toLowerCase(),
