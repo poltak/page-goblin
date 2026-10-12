@@ -17,12 +17,16 @@ class FakeRegistration extends EventTarget {
 }
 
 class FakeContainer extends EventTarget {
-    controller: object | null = null
+    controller: { scriptURL: string } | null = null
     registration = new FakeRegistration()
     register = vi.fn(async (): Promise<FakeRegistration> => this.registration)
 }
 
 const HOUR = 60 * 60 * 1000
+/** A worker of the app. Its file is next to the page. */
+const OURS = { scriptURL: new URL('./sw.js', document.baseURI).href }
+/** A worker of a different site of the same origin, with a scope that has this page in it. */
+const OTHER_SITE = { scriptURL: new URL('/service-worker.js', document.baseURI).href }
 
 describe('service worker registration', () => {
     let container: FakeContainer
@@ -119,7 +123,7 @@ describe('service worker registration', () => {
     })
 
     it('reports a worker that already waits when the page has a controller', async () => {
-        container.controller = {}
+        container.controller = OURS
         container.registration.waiting = new FakeWorker()
 
         pwa.registerServiceWorker({ onUpdateReady })
@@ -129,7 +133,7 @@ describe('service worker registration', () => {
     })
 
     it('reports a new worker after its install', async () => {
-        container.controller = {}
+        container.controller = OURS
         pwa.registerServiceWorker({ onUpdateReady })
         await settle()
 
@@ -141,7 +145,7 @@ describe('service worker registration', () => {
     })
 
     it('reports a worker that the browser started to install before the registration', async () => {
-        container.controller = {}
+        container.controller = OURS
         // The browser found the update during the page load. No updatefound event comes now.
         const worker = new FakeWorker()
         container.registration.installing = worker
@@ -159,15 +163,60 @@ describe('service worker registration', () => {
         await settle()
 
         finishInstall(findUpdate())
-        container.controller = {}
+        container.controller = OURS
         container.dispatchEvent(new Event('controllerchange'))
 
         expect(onUpdateReady).not.toHaveBeenCalled()
         expect(reload).not.toHaveBeenCalled()
     })
 
+    describe('with a worker of a different site of the origin in control', () => {
+        it('does not report the first install, and does not reload at a controller change', async () => {
+            container.controller = OTHER_SITE
+            pwa.registerServiceWorker({ onUpdateReady })
+            await settle()
+
+            // The other site gets a new version of its worker.
+            container.dispatchEvent(new Event('controllerchange'))
+            expect(reload).not.toHaveBeenCalled()
+
+            finishInstall(findUpdate())
+            expect(onUpdateReady).not.toHaveBeenCalled()
+
+            // The first worker of the app takes the page from the other worker.
+            container.controller = OURS
+            container.dispatchEvent(new Event('controllerchange'))
+            expect(reload).not.toHaveBeenCalled()
+        })
+
+        it('does not report a worker that waits', async () => {
+            container.controller = OTHER_SITE
+            container.registration.waiting = new FakeWorker()
+
+            pwa.registerServiceWorker({ onUpdateReady })
+            await settle()
+
+            expect(onUpdateReady).not.toHaveBeenCalled()
+        })
+
+        it('reports the next version and reloads after the worker of the app took control', async () => {
+            container.controller = OTHER_SITE
+            pwa.registerServiceWorker({ onUpdateReady })
+            await settle()
+            finishInstall(findUpdate())
+            container.controller = OURS
+            container.dispatchEvent(new Event('controllerchange'))
+
+            finishInstall(findUpdate())
+            expect(onUpdateReady).toHaveBeenCalledOnce()
+            container.dispatchEvent(new Event('controllerchange'))
+
+            expect(reload).toHaveBeenCalledOnce()
+        })
+    })
+
     it('starts the waiting worker and reloads one time when the user accepts', async () => {
-        container.controller = {}
+        container.controller = OURS
         pwa.registerServiceWorker({ onUpdateReady })
         await settle()
         const worker = findUpdate()
@@ -185,7 +234,7 @@ describe('service worker registration', () => {
     })
 
     it('reloads when the worker is active but the page got no controller event', async () => {
-        container.controller = {}
+        container.controller = OURS
         pwa.registerServiceWorker({ onUpdateReady })
         await settle()
         const worker = findUpdate()
@@ -200,7 +249,7 @@ describe('service worker registration', () => {
     })
 
     it('reloads when a different tab accepted the update', async () => {
-        container.controller = {}
+        container.controller = OURS
         pwa.registerServiceWorker({ onUpdateReady })
         await settle()
 
@@ -210,7 +259,7 @@ describe('service worker registration', () => {
     })
 
     it('reloads at once when the user accepts and no worker waits', async () => {
-        container.controller = {}
+        container.controller = OURS
         pwa.registerServiceWorker({ onUpdateReady })
         await settle()
 

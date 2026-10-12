@@ -1,4 +1,5 @@
 const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000
+const WORKER_FILE = './sw.js'
 
 export interface RegisterOptions {
     /**
@@ -20,17 +21,23 @@ function reloadOnce(): void {
 
 async function register(onUpdateReady: () => void): Promise<void> {
     const container = navigator.serviceWorker
-    let controlled = container.controller !== null
+    // A different site of the same origin can have a worker with a wider scope. That worker
+    // controls this page until the first worker of the app takes control. It is not an old
+    // version of the app, so it gives no update prompt and no reload.
+    const workerUrl = new URL(WORKER_FILE, document.baseURI).href
+    const isOurs = (worker: ServiceWorker | null): boolean => worker?.scriptURL === workerUrl
+
+    let controlled = isOurs(container.controller)
     container.addEventListener('controllerchange', () => {
         // The first worker of a new install takes control with no reload. Each later change
         // means that the cache of this page is gone, also when a different tab accepted it.
         if (controlled || updateAccepted) reloadOnce()
-        controlled = true
+        controlled = isOurs(container.controller)
     })
 
     let current: ServiceWorkerRegistration
     try {
-        current = await container.register('./sw.js', { updateViaCache: 'none' })
+        current = await container.register(WORKER_FILE, { updateViaCache: 'none' })
     } catch (error) {
         console.warn('The service worker did not register.', error)
         return
@@ -39,10 +46,10 @@ async function register(onUpdateReady: () => void): Promise<void> {
 
     const watchInstall = (worker: ServiceWorker | null): void => {
         worker?.addEventListener('statechange', () => {
-            if (worker.state === 'installed' && container.controller) onUpdateReady()
+            if (worker.state === 'installed' && isOurs(container.controller)) onUpdateReady()
         })
     }
-    if (current.waiting && container.controller) onUpdateReady()
+    if (current.waiting && isOurs(container.controller)) onUpdateReady()
     // The browser checks for an update at each page load. Registration starts after the load
     // event, so the new worker can be in its install already, with no updatefound event to come.
     watchInstall(current.installing)
