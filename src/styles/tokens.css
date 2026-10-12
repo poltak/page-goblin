@@ -1,0 +1,406 @@
+/*
+ * Design tokens. All colours, sizes and timings of the app come from this file.
+ *
+ * THEMES
+ * Set data-theme on the html element: light, sepia, dark or black. With no attribute the theme
+ * is light, or dark when the system prefers a dark scheme. An element in the page can also
+ * carry data-theme (for a theme preview). It then gets all colour tokens of that theme.
+ * The dark colours are written two times, in the media query and for the attribute.
+ * tokens.test.ts fails when the two blocks are different.
+ *
+ * CHROME COLOURS
+ *   --bg               page background
+ *   --surface          panels and sheets
+ *   --surface-raised   menus, toasts, small dialogs
+ *   --fill             quiet fill for hover, control tracks and cover tiles (translucent)
+ *   --fill-strong      pressed state and progress tracks (translucent)
+ *   --border           hairline, decoration only
+ *   --border-strong    control borders that carry meaning
+ *   --fg               text
+ *   --fg-muted         secondary text
+ *   --fg-faint         placeholders and hints
+ *   --accent           fills, the selected state, the focus ring
+ *   --accent-text      the accent as a text or icon colour
+ *   --accent-fg        text on --accent
+ *   --accent-soft      tint behind a selected item (translucent)
+ *   --danger           destructive actions and errors, as a fill or as text
+ *   --danger-fg        text on --danger
+ *   --focus-ring       outline colour of :focus-visible
+ *   --shadow-sheet     sheets and dialogs
+ *   --shadow-raised    menus and toasts
+ *   --scrim            backdrop of a modal dialog
+ *
+ * READING COLOURS. Custom properties inherit into the shadow roots of the reader view.
+ *   --rd-bg, --rd-fg, --rd-muted, --rd-link, --rd-rule
+ *   --rd-selection-bg  text selection
+ *   --rd-active-bg     moving marker for speech
+ *   --rd-hl-yellow, --rd-hl-green, --rd-hl-blue, --rd-hl-pink, --rd-hl-purple
+ *                      translucent highlight backgrounds
+ *   --hl-yellow, --hl-green, --hl-blue, --hl-pink, --hl-purple
+ *                      solid swatches for the colour buttons
+ *
+ * SCALES
+ *   --space-N          N times 4px. N is 1 to 8, 10, 12 or 16.
+ *   --radius-sm 4px, --radius-md 8px, --radius-lg 12px, --radius-xl 16px, --radius-full
+ *   --text-xs 12, --text-sm 13, --text-md 15, --text-lg 17, --text-xl 20, --text-2xl 24,
+ *   --text-3xl 32      font sizes in rem, so they follow the font size setting of the browser
+ *   --leading-tight 1.2, --leading-snug 1.35, --leading-normal 1.5
+ *   --weight-regular 400, --weight-medium 500, --weight-semibold 600
+ *   --control-h 44px, --control-h-compact 36px, --toolbar-h 52px
+ *   --icon-sm 16px, --icon-md 20px, --icon-lg 24px
+ *   --sheet-width 400px, --modal-width 360px, --menu-min-width 200px, --toast-max-width 480px
+ *   --dur-fast 120ms, --dur-base 200ms, --dur-slow 320ms
+ *                      all three are 0ms under prefers-reduced-motion, so each transition
+ *                      that uses them stops
+ *   --dur-spin 800ms   for the spinner, not changed by reduced motion
+ *   --ease-out, --ease-in, --ease-in-out
+ *   --z-raised 1, --z-sticky 10, --z-chrome 20, --z-sheet 30, --z-menu 40, --z-toast 50
+ *                      a dialog opened with showModal() and an open popover are in the top
+ *                      layer, above all of these
+ *   --safe-top, --safe-right, --safe-bottom, --safe-left
+ *                      the safe-area insets of the screen (notch, home indicator)
+ *   --opacity-disabled 0.45
+ *   --font-ui          the system font stack for all controls
+ *   --icon-chevron     the arrow image of .select
+ *
+ * CONTRAST. WCAG 2 ratios, calculated in tokens.test.ts. Translucent colours are mixed with
+ * the colour below them first. The limits are 4.5 for text, and 3 for large text, icons and
+ * control borders. Each cell is: on --bg / on --surface / on --surface-raised.
+ *
+ *                           light              sepia              dark               black
+ *   --fg                    16.12 16.81 16.81  10.18 10.99 11.39  11.19 10.18  9.16   8.64  8.15  7.65
+ *   --fg-muted               6.87  7.16  7.16   6.18  6.68  6.92   7.29  6.63  5.96   6.42  6.06  5.69
+ *   --fg-faint               4.71  4.91  4.91   4.85  5.24  5.43   5.51  5.01  4.51   5.11  4.82  4.53
+ *   --accent-text            5.55  5.79  5.79   5.54  5.98  6.20   7.49  6.81  6.12   6.72  6.34  5.95
+ *   --danger                 6.29  6.56  6.56   6.36  6.87  7.12   7.12  6.47  5.82   5.99  5.65  5.30
+ *   --accent (fill, ring)    4.71  4.91  4.91   4.17  4.50  4.67   6.42  5.84  5.25   6.19  5.84  5.48
+ *   --border-strong          3.51  3.66  3.66   3.48  3.76  3.90   4.44  4.04  3.63   3.83  3.61  3.39
+ *   --fg-muted on --fill     6.12  6.35  6.35   5.49  5.90  6.12   6.21  5.63  5.01   5.94  5.53  5.05
+ *   --border-strong on --fill 3.13 3.25  3.25   3.10  3.33  3.45   3.79  3.43  3.05   3.54  3.29  3.01
+ *   --accent-text on --accent-soft
+ *                            4.89  5.08  5.08   4.77  5.14  5.29   5.78  5.21  4.69   5.79  5.33  4.86
+ *
+ *   One value for each theme:   light   sepia   dark    black
+ *   --accent-fg on --accent      4.91    4.91    6.42    6.19
+ *   --danger-fg on --danger      6.56    7.49    7.12    5.99
+ *   --rd-link on --rd-bg         6.57    6.61    8.29    7.56
+ *   --rd-fg on a highlight      11.74    7.50    6.12    5.29   (the lowest of the five)
+ *   --rd-link on a highlight     4.79    4.87    4.53    4.63   (the lowest of the five)
+ *   --rd-fg on --rd-active-bg   11.35    7.33    6.26    5.73
+ *   --rd-link on --rd-active-bg  4.63    4.76    4.64    5.01
+ *   --rd-fg on --rd-selection-bg 11.68   7.58    6.77    6.32
+ *   --accent on --fill-strong    3.79    3.33    4.68    5.18   (slider and progress fill)
+ *
+ * A mark on top of a mark. The values above are for one mark on the page. When the speech
+ * marker or the text selection is painted on top of a highlight, the two colours mix.
+ * Each value is the lowest of the five highlight colours:
+ *                                    light   sepia   dark    black
+ *   --rd-fg on marker and highlight    8.79    5.70    4.00    3.43
+ *   --rd-fg on selection and highlight 8.62    5.72    3.99    3.58
+ *   --rd-link on marker and highlight  3.58    3.70    2.96    3.00
+ * The dark themes are below 4.5 here. The reader view must paint only one of the two colours
+ * on such text, or accept the lower ratio for the short time of the marker.
+ *
+ * --border is decoration (1.2 to 1.6) and must not be the only sign of a control or a state.
+ * The yellow swatch is below 3 on the light themes, so .swatch draws a --border-strong ring.
+ */
+
+:root {
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 20px;
+    --space-6: 24px;
+    --space-7: 28px;
+    --space-8: 32px;
+    --space-10: 40px;
+    --space-12: 48px;
+    --space-16: 64px;
+
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --radius-xl: 16px;
+    --radius-full: 999px;
+
+    --font-ui: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+    --text-xs: 0.75rem;
+    --text-sm: 0.8125rem;
+    --text-md: 0.9375rem;
+    --text-lg: 1.0625rem;
+    --text-xl: 1.25rem;
+    --text-2xl: 1.5rem;
+    --text-3xl: 2rem;
+
+    --leading-tight: 1.2;
+    --leading-snug: 1.35;
+    --leading-normal: 1.5;
+
+    --weight-regular: 400;
+    --weight-medium: 500;
+    --weight-semibold: 600;
+
+    --control-h: 44px;
+    --control-h-compact: 36px;
+    --toolbar-h: 52px;
+
+    --icon-sm: 16px;
+    --icon-md: 20px;
+    --icon-lg: 24px;
+
+    --sheet-width: 400px;
+    --modal-width: 360px;
+    --menu-min-width: 200px;
+    --toast-max-width: 480px;
+
+    --dur-fast: 120ms;
+    --dur-base: 200ms;
+    --dur-slow: 320ms;
+    --dur-spin: 800ms;
+
+    --ease-out: cubic-bezier(0.2, 0, 0, 1);
+    --ease-in: cubic-bezier(0.4, 0, 1, 1);
+    --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+    --z-raised: 1;
+    --z-sticky: 10;
+    --z-chrome: 20;
+    --z-sheet: 30;
+    --z-menu: 40;
+    --z-toast: 50;
+
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-right: env(safe-area-inset-right, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-left: env(safe-area-inset-left, 0px);
+
+    --opacity-disabled: 0.45;
+
+    /*
+     * The arrow of .select. A select element cannot hold an icon, and a data URL cannot read a
+     * custom property. This grey has a ratio of 3.3 or more on each surface of each theme.
+     */
+    --icon-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23807c75' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9.5l6 6 6-6'/%3E%3C/svg%3E");
+}
+
+@media (prefers-reduced-motion: reduce) {
+    :root {
+        --dur-fast: 0ms;
+        --dur-base: 0ms;
+        --dur-slow: 0ms;
+    }
+}
+
+:root,
+[data-theme='light'] {
+    color-scheme: light;
+
+    --bg: #fbfaf8;
+    --surface: #ffffff;
+    --surface-raised: #ffffff;
+    --fill: rgb(31 29 26 / 0.06);
+    --fill-strong: rgb(31 29 26 / 0.11);
+    --border: #e7e3dc;
+    --border-strong: #8a857d;
+    --fg: #1f1d1a;
+    --fg-muted: #5c574f;
+    --fg-faint: #757068;
+    --accent: #b4552d;
+    --accent-text: #a64a24;
+    --accent-fg: #ffffff;
+    --accent-soft: rgb(180 85 45 / 0.1);
+    --danger: #b8143a;
+    --danger-fg: #ffffff;
+    --shadow-sheet: 0 0 32px rgb(31 29 26 / 0.12);
+    --shadow-raised: 0 4px 16px rgb(31 29 26 / 0.1);
+    --scrim: rgb(31 29 26 / 0.32);
+
+    --rd-link: #983f1b;
+    --rd-selection-bg: rgb(31 29 26 / 0.16);
+    --rd-active-bg: rgb(180 85 45 / 0.26);
+    --rd-hl-yellow: rgb(250 204 21 / 0.42);
+    --rd-hl-green: rgb(74 190 110 / 0.32);
+    --rd-hl-blue: rgb(80 160 240 / 0.3);
+    --rd-hl-pink: rgb(236 72 153 / 0.26);
+    --rd-hl-purple: rgb(160 110 230 / 0.28);
+
+    --hl-yellow: #e2b10a;
+    --hl-green: #3f9d5c;
+    --hl-blue: #3d84d6;
+    --hl-pink: #d9488f;
+    --hl-purple: #8d5fd3;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme]) {
+        color-scheme: dark;
+
+        --bg: #1d1d1b;
+        --surface: #252523;
+        --surface-raised: #2d2d2a;
+        --fill: rgb(214 210 201 / 0.07);
+        --fill-strong: rgb(214 210 201 / 0.13);
+        --border: #3d3d39;
+        --border-strong: #85837a;
+        --fg: #d6d2c9;
+        --fg-muted: #aeaaa1;
+        --fg-faint: #97938a;
+        --accent: #e08a62;
+        --accent-text: #e89a75;
+        --accent-fg: #1d1d1b;
+        --accent-soft: rgb(224 138 98 / 0.16);
+        --danger: #f6879a;
+        --danger-fg: #1d1d1b;
+        --shadow-sheet: 0 0 32px rgb(0 0 0 / 0.4);
+        --shadow-raised: 0 4px 16px rgb(0 0 0 / 0.32);
+        --scrim: rgb(0 0 0 / 0.5);
+
+        --rd-link: #eda583;
+        --rd-selection-bg: rgb(214 210 201 / 0.2);
+        --rd-active-bg: rgb(224 138 98 / 0.32);
+        --rd-hl-yellow: rgb(250 204 21 / 0.24);
+        --rd-hl-green: rgb(74 190 110 / 0.3);
+        --rd-hl-blue: rgb(80 160 240 / 0.32);
+        --rd-hl-pink: rgb(236 72 153 / 0.32);
+        --rd-hl-purple: rgb(160 110 230 / 0.34);
+
+        --hl-yellow: #d9ae2b;
+        --hl-green: #56ad72;
+        --hl-blue: #5b9be0;
+        --hl-pink: #de64a0;
+        --hl-purple: #a07bdc;
+    }
+}
+
+[data-theme='sepia'] {
+    color-scheme: light;
+
+    --bg: #f4ecd8;
+    --surface: #faf5e6;
+    --surface-raised: #fdf9ee;
+    --fill: rgb(67 52 34 / 0.07);
+    --fill-strong: rgb(67 52 34 / 0.13);
+    --border: #e0d6bd;
+    --border-strong: #897c61;
+    --fg: #433422;
+    --fg-muted: #65543b;
+    --fg-faint: #756449;
+    --accent: #b4552d;
+    --accent-text: #9a4420;
+    --accent-fg: #ffffff;
+    --accent-soft: rgb(180 85 45 / 0.12);
+    --danger: #a81235;
+    --danger-fg: #ffffff;
+    --shadow-sheet: 0 0 32px rgb(67 52 34 / 0.14);
+    --shadow-raised: 0 4px 16px rgb(67 52 34 / 0.12);
+    --scrim: rgb(67 52 34 / 0.36);
+
+    --rd-link: #8a3a18;
+    --rd-selection-bg: rgb(67 52 34 / 0.17);
+    --rd-active-bg: rgb(180 85 45 / 0.26);
+    --rd-hl-yellow: rgb(240 190 0 / 0.42);
+    --rd-hl-green: rgb(74 180 100 / 0.32);
+    --rd-hl-blue: rgb(80 150 230 / 0.3);
+    --rd-hl-pink: rgb(230 70 145 / 0.26);
+    --rd-hl-purple: rgb(155 105 225 / 0.28);
+
+    --hl-yellow: #e2b10a;
+    --hl-green: #3f9d5c;
+    --hl-blue: #3d84d6;
+    --hl-pink: #d9488f;
+    --hl-purple: #8d5fd3;
+}
+
+[data-theme='dark'] {
+    color-scheme: dark;
+
+    --bg: #1d1d1b;
+    --surface: #252523;
+    --surface-raised: #2d2d2a;
+    --fill: rgb(214 210 201 / 0.07);
+    --fill-strong: rgb(214 210 201 / 0.13);
+    --border: #3d3d39;
+    --border-strong: #85837a;
+    --fg: #d6d2c9;
+    --fg-muted: #aeaaa1;
+    --fg-faint: #97938a;
+    --accent: #e08a62;
+    --accent-text: #e89a75;
+    --accent-fg: #1d1d1b;
+    --accent-soft: rgb(224 138 98 / 0.16);
+    --danger: #f6879a;
+    --danger-fg: #1d1d1b;
+    --shadow-sheet: 0 0 32px rgb(0 0 0 / 0.4);
+    --shadow-raised: 0 4px 16px rgb(0 0 0 / 0.32);
+    --scrim: rgb(0 0 0 / 0.5);
+
+    --rd-link: #eda583;
+    --rd-selection-bg: rgb(214 210 201 / 0.2);
+    --rd-active-bg: rgb(224 138 98 / 0.32);
+    --rd-hl-yellow: rgb(250 204 21 / 0.24);
+    --rd-hl-green: rgb(74 190 110 / 0.3);
+    --rd-hl-blue: rgb(80 160 240 / 0.32);
+    --rd-hl-pink: rgb(236 72 153 / 0.32);
+    --rd-hl-purple: rgb(160 110 230 / 0.34);
+
+    --hl-yellow: #d9ae2b;
+    --hl-green: #56ad72;
+    --hl-blue: #5b9be0;
+    --hl-pink: #de64a0;
+    --hl-purple: #a07bdc;
+}
+
+/* For OLED screens. No surface is lighter than #131312, and there are no shadows. */
+[data-theme='black'] {
+    color-scheme: dark;
+
+    --bg: #000000;
+    --surface: #0a0a09;
+    --surface-raised: #131312;
+    --fill: rgb(169 166 159 / 0.08);
+    --fill-strong: rgb(169 166 159 / 0.15);
+    --border: #262624;
+    --border-strong: #6b6963;
+    --fg: #a9a69f;
+    --fg-muted: #918e87;
+    --fg-faint: #807d76;
+    --accent: #c9764f;
+    --accent-text: #cf7d56;
+    --accent-fg: #000000;
+    --accent-soft: rgb(201 118 79 / 0.16);
+    --danger: #dc6078;
+    --danger-fg: #000000;
+    --shadow-sheet: none;
+    --shadow-raised: none;
+    --scrim: rgb(0 0 0 / 0.6);
+
+    --rd-link: #d68862;
+    --rd-selection-bg: rgb(169 166 159 / 0.22);
+    --rd-active-bg: rgb(201 118 79 / 0.32);
+    --rd-hl-yellow: rgb(250 204 21 / 0.24);
+    --rd-hl-green: rgb(74 190 110 / 0.24);
+    --rd-hl-blue: rgb(80 160 240 / 0.26);
+    --rd-hl-pink: rgb(236 72 153 / 0.26);
+    --rd-hl-purple: rgb(160 110 230 / 0.28);
+
+    --hl-yellow: #b8932a;
+    --hl-green: #4a9462;
+    --hl-blue: #4f86c2;
+    --hl-pink: #bf5a8c;
+    --hl-purple: #8a6bc0;
+}
+
+/*
+ * Tokens that are the same in each theme but point to theme colours. They are set again on each
+ * element with data-theme, because var() is resolved on the element that has the declaration.
+ */
+:root,
+[data-theme] {
+    --focus-ring: var(--accent);
+    --rd-bg: var(--bg);
+    --rd-fg: var(--fg);
+    --rd-muted: var(--fg-muted);
+    --rd-rule: var(--border);
+}

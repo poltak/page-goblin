@@ -1,1 +1,13 @@
-/* The design system files are imported here. */
+/*
+ * The one stylesheet of the app. It imports the design system in a fixed order.
+ *
+ * The design system is in cascade layers. A rule that is not in a layer wins over each rule in
+ * a layer, so a view stylesheet can change a component with a plain class selector and does
+ * not need a more specific selector. Add the imports of the view stylesheets at the end of
+ * this file, without a layer.
+ */
+@layer tokens, base, components;
+
+@import './tokens.css' layer(tokens);
+@import './base.css' layer(base);
+@import './components.css' layer(components);

@@ -1,0 +1,213 @@
+/*
+ * Base styles: a small reset and the look of plain elements. No classes of components.
+ *
+ * WHAT THIS FILE SETS
+ *   - border-box sizing, no default margins on text blocks, lists, fieldsets and the body
+ *   - html and body use --bg, --fg and --font-ui. The body is 100dvh high or more.
+ *   - form controls inherit the font and the colour
+ *   - h1 to h6 from the type scale, links in --accent-text, hr as a hairline
+ *   - one focus ring for all elements: 2px of --focus-ring with a 2px offset on :focus-visible
+ *   - thin scroll bars in --border-strong
+ *   - text selection in --rd-selection-bg
+ *
+ * CLASSES
+ *   .visually-hidden   for text that only a screen reader gets
+ *
+ * ATTRIBUTES
+ *   [hidden]           always display: none, also on an element with a display class
+ */
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+/* scrollbar-width does not inherit, so it is set on each element. */
+* {
+    scrollbar-width: thin;
+}
+
+html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-ui);
+    line-height: var(--leading-normal);
+    accent-color: var(--accent);
+    scrollbar-color: var(--border-strong) transparent;
+}
+
+body {
+    min-height: 100dvh;
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-size: var(--text-md);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p,
+figure,
+blockquote,
+pre,
+dl,
+dd,
+ul,
+ol,
+menu {
+    margin: 0;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    font-weight: var(--weight-semibold);
+    line-height: var(--leading-tight);
+    text-wrap: balance;
+}
+
+h1 {
+    font-size: var(--text-2xl);
+    letter-spacing: -0.015em;
+}
+
+h2 {
+    font-size: var(--text-xl);
+    letter-spacing: -0.01em;
+}
+
+h3 {
+    font-size: var(--text-lg);
+}
+
+h4 {
+    font-size: var(--text-md);
+}
+
+h5,
+h6 {
+    font-size: var(--text-sm);
+}
+
+a {
+    color: var(--accent-text);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.18em;
+
+    @media (hover: hover) {
+        &:hover {
+            text-decoration-thickness: 2px;
+        }
+    }
+}
+
+hr {
+    height: 0;
+    margin: 0;
+    border: 0;
+    border-top: 1px solid var(--border);
+}
+
+img {
+    display: block;
+    max-width: 100%;
+}
+
+button,
+input,
+select,
+textarea {
+    margin: 0;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+}
+
+/* Without this, two fast taps on a control zoom the page on a touch screen. */
+a,
+button,
+input,
+select,
+textarea,
+label,
+summary {
+    touch-action: manipulation;
+}
+
+/* A long press on a button must not select its label or open the callout of iOS. */
+button {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+}
+
+/* A fieldset has a minimum width from its content by default, which breaks narrow layouts. */
+fieldset {
+    min-inline-size: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+
+legend {
+    padding: 0;
+}
+
+:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+}
+
+/* A dialog with no control inside gets the focus itself. A ring around the full dialog is noise. */
+dialog:focus-visible {
+    outline: none;
+}
+
+::selection {
+    background: var(--rd-selection-bg);
+}
+
+/* Safari before 18.2 does not have the standard scroll bar properties. */
+@supports not (scrollbar-width: thin) {
+    ::-webkit-scrollbar {
+        width: var(--space-2);
+        height: var(--space-2);
+    }
+
+    ::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+        border-radius: var(--radius-full);
+        background: var(--border-strong);
+    }
+}
+
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+/* hidden="until-found" must stay in the layout, so it is not in this rule. */
+[hidden]:where(:not([hidden='until-found'])) {
+    display: none !important;
+}
