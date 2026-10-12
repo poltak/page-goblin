@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FONT_SIZE_MAX, FONT_SIZE_MIN } from '$lib/settings/schema'
 import { createSettingsStore } from '$lib/settings/store'
@@ -8,7 +10,7 @@ import { BARS_PEEK_MS } from './bars'
 import { createFrame } from './frame'
 import type { ScreenFrame } from './frame'
 import { PART_LOAD_MESSAGE } from './lazy-part'
-import { createReaderScreen, LINE_SCROLL_PX } from './screen'
+import { createReaderScreen, LINE_SCROLL_PX, PANEL_CLOSE_GUARD_MS } from './screen'
 import {
     makeFakeParts,
     makeFakeSession,
@@ -516,6 +518,154 @@ describe('the bars', () => {
         expect(frame.stage.hasAttribute('inert')).toBe(false)
         session.setMode('listen')
         expect(frame.stage.hasAttribute('inert')).toBe(false)
+    })
+})
+
+// A closed panel stays on screen for its close transition and takes no press in that time.
+describe('a press in the page after a panel closed', () => {
+    function closePanel(frame: ScreenFrame, tag = 'dialog'): void {
+        const panel = document.createElement(tag)
+        frame.overlay.append(panel)
+        // The close event of a dialog does not bubble.
+        panel.dispatchEvent(new Event('close'))
+    }
+
+    /** An element of the reader view, and the presses that it gets. */
+    function viewText(frame: ScreenFrame) {
+        const text = document.createElement('p')
+        frame.stage.append(text)
+        const onDown = vi.fn()
+        // The reader view turns the page for a press and a release in a turn zone.
+        text.addEventListener('pointerdown', onDown)
+        return { text, onDown }
+    }
+
+    it('does not go to the reader view, so a double tap on a contents entry turns no page', () => {
+        const { frame } = setup()
+        const { text, onDown } = viewText(frame)
+
+        closePanel(frame)
+        vi.advanceTimersByTime(PANEL_CLOSE_GUARD_MS - 1)
+        pointer(text, 'pointerdown', { pointerType: 'touch' })
+        expect(onDown).not.toHaveBeenCalled()
+
+        vi.advanceTimersByTime(1)
+        pointer(text, 'pointerdown', { pointerType: 'touch' })
+        expect(onDown).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not hide the bars', () => {
+        const { frame } = setup()
+
+        closePanel(frame)
+        tapPage(frame)
+        expect(barsVisible(frame)).toBe(true)
+
+        vi.advanceTimersByTime(PANEL_CLOSE_GUARD_MS)
+        tapPage(frame)
+        expect(barsVisible(frame)).toBe(false)
+    })
+
+    it('goes to the reader view after the close event of an element that is not a dialog', () => {
+        const { frame } = setup()
+        const { text, onDown } = viewText(frame)
+
+        closePanel(frame, 'div')
+        pointer(text, 'pointerdown', { pointerType: 'touch' })
+
+        expect(onDown).toHaveBeenCalledTimes(1)
+    })
+})
+
+describe('the page buttons for a screen reader', () => {
+    it('are not there before the book is open', () => {
+        const frame = createFrame()
+
+        expect(frame.prevPage.hidden).toBe(true)
+        expect(frame.nextPage.hidden).toBe(true)
+    })
+
+    it('are two buttons with a text, between the bars and the page in the order of the Tab key', () => {
+        const { frame } = setup()
+        const following = Node.DOCUMENT_POSITION_FOLLOWING
+
+        expect(frame.prevPage.hidden).toBe(false)
+        expect(frame.nextPage.hidden).toBe(false)
+        expect(frame.prevPage.textContent?.trim()).toBe('Previous page')
+        expect(frame.nextPage.textContent?.trim()).toBe('Next page')
+        expect(frame.prevPage.type).toBe('button')
+        expect(frame.nextPage.type).toBe('button')
+        expect(frame.bottomBar.compareDocumentPosition(frame.prevPage) & following).toBeTruthy()
+        expect(frame.prevPage.compareDocumentPosition(frame.nextPage) & following).toBeTruthy()
+        // The text of the new page is the next stop after the button.
+        expect(frame.nextPage.compareDocumentPosition(frame.stage) & following).toBeTruthy()
+    })
+
+    // A screen reader on a touch screen sends a click with no pointer events.
+    it('turn the page for a click', () => {
+        const { frame, session } = setup()
+
+        frame.nextPage.click()
+        expect(session.next).toHaveBeenCalledTimes(1)
+        expect(session.prev).not.toHaveBeenCalled()
+
+        frame.prevPage.click()
+        expect(session.prev).toHaveBeenCalledTimes(1)
+        expect(session.next).toHaveBeenCalledTimes(1)
+    })
+
+    it('stay when the bars hide', () => {
+        const { frame } = setup()
+        hideBars(frame)
+
+        expect(frame.prevPage.hidden).toBe(false)
+        expect(frame.nextPage.hidden).toBe(false)
+    })
+
+    it('are gone below the speed reader, and stay in the listen mode', () => {
+        const { frame, session } = setup()
+
+        session.setMode('speed')
+        expect(frame.prevPage.hidden).toBe(true)
+        expect(frame.nextPage.hidden).toBe(true)
+
+        session.setMode('listen')
+        expect(frame.prevPage.hidden).toBe(false)
+        expect(frame.nextPage.hidden).toBe(false)
+
+        session.setMode('read')
+        expect(frame.prevPage.hidden).toBe(false)
+        expect(frame.nextPage.hidden).toBe(false)
+    })
+
+    it('do not turn the page after the screen is destroyed', async () => {
+        const { frame, session, screen } = setup()
+        await screen.destroy()
+
+        frame.nextPage.click()
+
+        expect(session.next).not.toHaveBeenCalled()
+    })
+})
+
+// jsdom has no layout, so these tests read the source text. They keep a rule in its file
+// when the reason for the rule is not visible in jsdom.
+describe('the stylesheet of the screen', () => {
+    const css = readFileSync(join(import.meta.dirname, 'screen.css'), 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/\s+/g, ' ')
+
+    // Older Chromium browsers read the value for the viewport from the body element.
+    it('stops the pull to refresh on the root element and on the body', () => {
+        expect(css).toContain(
+            ':root:has(.reader-screen), :root:has(.reader-screen) body { overscroll-behavior: none; }',
+        )
+    })
+
+    it('shows the buttons for the keyboard only while they have the focus', () => {
+        expect(css).toMatch(
+            /\.reader-show-bars, \.reader-page-turn \{[^}]*&:not\(:focus-visible\) \{[^}]*clip-path: inset\(50%\);/,
+        )
     })
 })
 
@@ -1388,6 +1538,39 @@ describe('the More menu', () => {
         session.relocate({ locator: { spineIndex: 1, offset: 200 } })
         expect(barsVisible(frame)).toBe(false)
         expect('open' in frame.moreMenu.dataset).toBe(false)
+    })
+
+    // Safari 16 has no Popover API. The menu script closes the menu itself there.
+    describe('in a browser with no Popover API', () => {
+        const isOpen = (frame: ScreenFrame) => frame.moreMenu.classList.contains('is-open')
+
+        beforeEach(() => {
+            const prototype = HTMLElement.prototype as Partial<HTMLElement>
+            delete prototype.showPopover
+            delete prototype.hidePopover
+        })
+
+        afterEach(installOverlayMethods)
+
+        it('does not give the press that closes the menu to the reader view', () => {
+            const { frame } = setup()
+            const text = document.createElement('p')
+            frame.stage.append(text)
+            const onDown = vi.fn()
+            // The reader view turns the page for a press and a release in a turn zone.
+            text.addEventListener('pointerdown', onDown)
+
+            frame.moreButton.click()
+            expect(isOpen(frame)).toBe(true)
+
+            pointer(text, 'pointerdown', { pointerType: 'touch' })
+            pointer(text, 'pointerup', { pointerType: 'touch' })
+            expect(isOpen(frame)).toBe(false)
+            expect(onDown).not.toHaveBeenCalled()
+
+            pointer(text, 'pointerdown', { pointerType: 'touch' })
+            expect(onDown).toHaveBeenCalledTimes(1)
+        })
     })
 })
 

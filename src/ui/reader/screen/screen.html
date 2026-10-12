@@ -109,6 +109,26 @@
         </div>
     </div>
 
+    <!-- A screen reader on a touch screen sends no pointer events, so a tap or a swipe of its
+         user does not turn the page. These two buttons do. They come directly before the
+         page, so the text of the new page is the next stop after them. -->
+    <button
+        class="btn btn-sm reader-page-turn reader-page-prev"
+        type="button"
+        data-screen-action="prev-page"
+        hidden
+    >
+        Previous page
+    </button>
+    <button
+        class="btn btn-sm reader-page-turn reader-page-next"
+        type="button"
+        data-screen-action="next-page"
+        hidden
+    >
+        Next page
+    </button>
+
     <p class="reader-head"><span class="reader-head-text"></span></p>
     <div class="reader-stage"></div>
     <div class="reader-status" hidden></div>

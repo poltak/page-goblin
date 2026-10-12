@@ -6,8 +6,12 @@
  * This file is not in a cascade layer, so each rule wins over the component rules.
  */
 
-/* A swipe in the book must not reload the page or move it past its edge. */
-:root:has(.reader-screen) {
+/*
+ * A swipe in the book must not reload the page or move it past its edge. Older Chromium
+ * browsers read the value for the viewport from the body element, so the two elements have it.
+ */
+:root:has(.reader-screen),
+:root:has(.reader-screen) body {
     overscroll-behavior: none;
 }
 
@@ -281,12 +285,11 @@
     gap: var(--space-2);
 }
 
-/* ---------- The way to the bars for the keyboard ---------- */
+/* ---------- Controls for the keyboard and a screen reader ---------- */
 
-.reader-show-bars {
+.reader-show-bars,
+.reader-page-turn {
     position: absolute;
-    top: calc(var(--safe-top) + var(--space-2));
-    left: calc(var(--safe-left) + var(--space-2));
     z-index: var(--z-chrome);
     background: var(--surface-raised);
     color: var(--fg);
@@ -302,6 +305,30 @@
         overflow: hidden;
         clip-path: inset(50%);
     }
+}
+
+/* The way to the bars for the keyboard. */
+.reader-show-bars {
+    top: calc(var(--safe-top) + var(--space-2));
+    left: calc(var(--safe-left) + var(--space-2));
+}
+
+/*
+ * A screen reader on a touch screen sends a click and no pointer events, so a tap or a swipe
+ * of its user does not turn the page. These two buttons do. Each one is at the side of the
+ * page where a tap turns the page, clear of the two bars.
+ */
+.reader-page-turn {
+    top: 50%;
+    translate: 0 -50%;
+}
+
+.reader-page-prev {
+    left: calc(var(--safe-left) + var(--space-2));
+}
+
+.reader-page-next {
+    right: calc(var(--safe-right) + var(--space-2));
 }
 
 /* ---------- Overlay layer ---------- */

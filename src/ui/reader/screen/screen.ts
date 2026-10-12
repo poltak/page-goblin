@@ -81,6 +81,13 @@ const IDLE_FALLBACK_MS = 300
 /** The step of an up or down arrow key in the scroll view. Browsers use the same distance. */
 export const LINE_SCROLL_PX = 40
 
+/**
+ * The page takes no press for this time after a panel closed. A closed panel stays on screen
+ * for its close transition and takes no press in that time, so a press there goes to the page
+ * below. The second tap of a double tap on a contents entry would turn the page.
+ */
+export const PANEL_CLOSE_GUARD_MS = 350
+
 function noop(): void {}
 
 function logError(error: unknown): void {
@@ -337,24 +344,37 @@ export function createReaderScreen(options: ReaderScreenOptions): ReaderScreen {
     // 'center-tap', which toggles them. Together the two must not hide the bars and then show
     // them again, so each press keeps the state of the bars at its start.
     let press: { barsVisible: boolean; menuOpen: boolean } | null = null
+    let panelClosedAt = Number.NEGATIVE_INFINITY
+    const panelJustClosed = (): boolean => Date.now() - panelClosedAt < PANEL_CLOSE_GUARD_MS
     stops.push(
+        // The close event of a dialog does not bubble, so the listener is in the capture phase.
+        on(
+            frame.overlay,
+            'close',
+            (event) => {
+                if (event.target instanceof HTMLDialogElement) panelClosedAt = Date.now()
+            },
+            true,
+        ),
         // On the window, because a part can stop the event on its way down to the stage.
         on(
             window,
             'pointerdown',
             (event) => {
                 const inPage = event.target instanceof Node && stage.contains(event.target)
-                press = inPage ? { barsVisible: bars.visible, menuOpen } : null
+                press =
+                    inPage && !panelJustClosed() ? { barsVisible: bars.visible, menuOpen } : null
             },
             { capture: true, passive: true },
         ),
         // A press outside the open menu only closes the menu. The reader view acts on the
         // release of a press, so it must not get this one. The menu script stops the click.
+        // A press on a panel that closes is also not for the page.
         on(
             stage,
             'pointerdown',
             (event) => {
-                if (menuOpen) event.stopPropagation()
+                if (menuOpen || panelJustClosed()) event.stopPropagation()
             },
             true,
         ),
@@ -373,6 +393,7 @@ export function createReaderScreen(options: ReaderScreenOptions): ReaderScreen {
         session.on('mode', (mode) => {
             // The speed reader covers the page. The Tab key must not get to a link below it.
             stage.toggleAttribute('inert', mode === 'speed')
+            renderPageButtons()
             if (mode === 'read') showBarsAfterMode()
             else dispatchBars('mode')
             // The bottom bar shows only outside the listen mode.
@@ -608,6 +629,8 @@ export function createReaderScreen(options: ReaderScreenOptions): ReaderScreen {
         on(topBar, 'click', onBarClick),
         on(bottomBar, 'click', onBarClick),
         on(frame.showBars, 'click', showBarsFromKeyboard),
+        on(frame.prevPage, 'click', () => turnPage(false, false)),
+        on(frame.nextPage, 'click', () => turnPage(true, false)),
         on(frame.moreMenu, 'beforetoggle', (event) => {
             menuOpen = (event as ToggleEvent).newState === 'open'
         }),
@@ -642,6 +665,13 @@ export function createReaderScreen(options: ReaderScreenOptions): ReaderScreen {
         void turn.catch(logError).finally(() => {
             turns--
         })
+    }
+
+    /** The speed reader covers the page and has its own controls. */
+    function renderPageButtons(): void {
+        const covered = session.mode === 'speed'
+        frame.prevPage.hidden = covered
+        frame.nextPage.hidden = covered
     }
 
     function scrollLines(lines: number): boolean {
@@ -736,6 +766,7 @@ export function createReaderScreen(options: ReaderScreenOptions): ReaderScreen {
     setRangeValue(slider)
     renderPosition()
     renderFullscreen()
+    renderPageButtons()
     dispatchBars('open')
 
     async function close(): Promise<void> {

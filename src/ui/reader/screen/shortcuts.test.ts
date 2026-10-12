@@ -50,6 +50,7 @@ describe('createShortcutsDialog', () => {
                 '+ => Larger text',
                 '- => Smaller text',
                 'Backspace => Go back after a jump',
+                'Tab => Go to the toolbar of the selected text',
                 'Esc => Hide the toolbars',
                 '? => Keyboard shortcuts',
             ]),

@@ -45,6 +45,7 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
             { keys: ['+'], action: 'Larger text' },
             { keys: ['-'], action: 'Smaller text' },
             { keys: ['Backspace'], action: 'Go back after a jump' },
+            { keys: ['Tab'], action: 'Go to the toolbar of the selected text' },
             { keys: ['Esc'], action: 'Hide the toolbars' },
             { keys: ['?'], action: 'Keyboard shortcuts' },
         ],

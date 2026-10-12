@@ -11,6 +11,9 @@ export interface ScreenFrame {
     root: HTMLElement
     /** Gets the focus and shows the bars. It is the way to the bars for the keyboard. */
     showBars: HTMLButtonElement
+    /** The two buttons that turn the page for a screen reader, which sends no pointer events. */
+    prevPage: HTMLButtonElement
+    nextPage: HTMLButtonElement
     topBar: HTMLElement
     bottomBar: HTMLElement
     bookTitle: HTMLElement
@@ -76,6 +79,8 @@ export function createFrame(): ScreenFrame {
     return {
         root,
         showBars: qs('.reader-show-bars', root),
+        prevPage: qs('.reader-page-prev', root),
+        nextPage: qs('.reader-page-next', root),
         topBar: qs('.reader-bar-top', root),
         bottomBar: qs('.reader-bar-bottom', root),
         bookTitle: qs('.reader-book-title', root),
