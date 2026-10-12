@@ -167,6 +167,8 @@ describe('createVoiceSheet', () => {
 
     it('moves the focus through the rows that are in sight', () => {
         const { sheet, onSelect } = make()
+        // The sheet puts the focus on the selected voice only for a user of the keyboard.
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }))
         sheet.open(opener)
         expect(document.activeElement).toBe(row('Alice'))
 

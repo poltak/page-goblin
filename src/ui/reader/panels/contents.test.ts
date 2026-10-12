@@ -108,12 +108,23 @@ describe('the contents panel', () => {
     it('gives the focus back to the control that opened it', () => {
         const contents = mount()
         const opener = focusOpener()
+        // The panel puts the focus on its tab only for a user of the keyboard.
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }))
 
         contents.open()
         expect(document.activeElement).toBe(tab('contents'))
 
         contents.close()
         expect(document.activeElement).toBe(opener)
+    })
+
+    it('does not put the focus on a tab after a press, so a touch screen shows no focus ring', () => {
+        const contents = mount()
+        window.dispatchEvent(new Event('pointerdown'))
+
+        contents.open()
+
+        expect(document.activeElement).not.toBe(tab('contents'))
     })
 
     it('closes with its close button', () => {
@@ -139,6 +150,7 @@ describe('the tabs', () => {
     })
 
     it('selects the tab that open() names', () => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }))
         mount().open('highlights')
 
         expect(tab('highlights').getAttribute('aria-selected')).toBe('true')

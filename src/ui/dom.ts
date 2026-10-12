@@ -146,3 +146,18 @@ function toNumber(text: string, fallback: number): number {
     const number = text.trim() === '' ? NaN : Number(text)
     return Number.isFinite(number) ? number : fallback
 }
+
+let keyboardLast = false
+if (typeof window !== 'undefined') {
+    window.addEventListener('keydown', () => (keyboardLast = true), true)
+    window.addEventListener('pointerdown', () => (keyboardLast = false), true)
+}
+
+/**
+ * True when the last input of the user was a key, not a pointer. Safari shows a focus ring for
+ * each focus that a script sets, so a panel that opens by touch moves the focus into its
+ * content only when this is true.
+ */
+export function usedKeyboardLast(): boolean {
+    return keyboardLast
+}

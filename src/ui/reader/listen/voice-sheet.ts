@@ -13,7 +13,7 @@ import {
 } from '$lib/settings'
 import { primaryLanguage, type VoiceInfo } from '$lib/speech'
 import { connectDialog, openDialog } from '../../app/dialog'
-import { on, qs, qsa, setRangeValue } from '../../dom'
+import { on, qs, qsa, setRangeValue, usedKeyboardLast } from '../../dom'
 import { cloneVoiceRow, cloneVoiceSheet } from './markup'
 
 export interface VoiceSheetOptions {
@@ -194,8 +194,11 @@ export function createVoiceSheet(options: VoiceSheetOptions): VoiceSheet {
             readSettings()
             drawList()
             openDialog(dialog, opener)
-            // This also moves a selected voice that is far down the list into sight.
-            groups.querySelector<HTMLElement>('.listen-voice[aria-checked="true"]')?.focus()
+            const checked = groups.querySelector<HTMLElement>('.listen-voice[aria-checked="true"]')
+            // After a tap the focus stays on the dialog, so no row shows a focus ring.
+            if (usedKeyboardLast()) checked?.focus()
+            // A selected voice that is far down the list comes into sight.
+            else checked?.scrollIntoView?.({ block: 'center' })
         },
 
         close() {

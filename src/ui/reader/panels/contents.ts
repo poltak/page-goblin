@@ -5,7 +5,7 @@
  */
 
 import { connectDialog, openDialog } from '../../app/dialog'
-import { on, qs } from '../../dom'
+import { on, qs, usedKeyboardLast } from '../../dom'
 import type { ContentsPanel, ContentsTab, PartOptions } from '../parts'
 import { createBookmarksView } from './contents-bookmarks'
 import { createHighlightsView } from './contents-highlights'
@@ -141,7 +141,8 @@ export function createContentsPanel({ session, host }: PartOptions): ContentsPan
             if (otherTab) setSelected(tab)
             const wasOpen = dialog.open
             openDialog(dialog)
-            if (!wasOpen) tabButton(selected).focus({ preventScroll: true })
+            // After a tap the focus stays on the dialog, so no tab shows a focus ring.
+            if (!wasOpen && usedKeyboardLast()) tabButton(selected).focus({ preventScroll: true })
             // The browser ignores a scroll write to a closed dialog, so it comes after the open.
             if (otherTab) body.scrollTop = 0
             showSelected()
