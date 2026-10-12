@@ -255,6 +255,128 @@ describe('createContentLoader: load', () => {
     })
 })
 
+describe('createContentLoader: language', () => {
+    function languageLoader(htmlAttributes: string, language: string | null): ContentLoader {
+        const book = createFakeBook({
+            files: {
+                'ch.xhtml':
+                    `<html xmlns="http://www.w3.org/1999/xhtml" ${htmlAttributes}><head><title>T</title></head>` +
+                    '<body><p>Text</p></body></html>',
+            },
+            spine: ['ch.xhtml'],
+            metadata: { language },
+        })
+        return makeLoader({ book })
+    }
+
+    it('takes the language of the book when the document has none', async () => {
+        const content = await languageLoader('', 'EN_us').load(0)
+
+        expect(content.lang).toBe('en-us')
+        expect(content.root.getAttribute('lang')).toBe('en-us')
+    })
+
+    it('takes the language of the document before the language of the book', async () => {
+        const content = await languageLoader('xml:lang="fr_CA"', 'en').load(0)
+
+        expect(content.lang).toBe('fr-CA')
+        expect(content.root.getAttribute('lang')).toBe('fr-CA')
+    })
+
+    it('takes the language of the book when the document names no language', async () => {
+        const content = await languageLoader('lang="und"', 'eng').load(0)
+
+        expect(content.lang).toBe('en')
+        expect(content.root.getAttribute('lang')).toBe('en')
+    })
+
+    it('gives null and sets no lang attribute when there is no language', async () => {
+        for (const language of [null, 'UND', 'English']) {
+            const content = await languageLoader('lang="zxx"', language).load(0)
+
+            expect(content.lang, String(language)).toBeNull()
+            expect(content.root.hasAttribute('lang')).toBe(false)
+            loader?.dispose()
+        }
+    })
+})
+
+describe('createContentLoader: sizes that follow the reader setting', () => {
+    const book = () =>
+        createFakeBook({
+            files: {
+                'ch.xhtml': chapter(
+                    '<p id="a" style="font-size: 10px; line-height: 12px !important">a</p>' +
+                        '<p id="b" style="font-size: large; line-height: 1.5">b</p>' +
+                        '<p id="c" style="font-size: 0.9em; color: red">c</p>',
+                    '<link rel="stylesheet" href="main.css"/>' +
+                        '<style>h1 { font-size: 24pt } h2 { font-size: x-small }</style>',
+                ),
+                'main.css': 'p { font-size: 12pt; line-height: 14pt } li { font-size: 80% }',
+            },
+            spine: ['ch.xhtml'],
+        })
+
+    it('scales the absolute sizes of the stylesheets', async () => {
+        const content = await makeLoader({ book: book() }).load(0)
+        const [linked, inline] = content.styles
+        const value = (sheet: CSSStyleSheet, index: number, name: string) =>
+            (sheet.cssRules[index] as CSSStyleRule).style.getPropertyValue(name)
+
+        expect(value(linked, 0, 'font-size')).toBe('calc(12pt * var(--rd-scale, 1))')
+        expect(value(linked, 0, 'line-height')).toBe('calc(14pt * var(--rd-scale, 1))')
+        expect(value(linked, 1, 'font-size')).toBe('80%')
+        expect(value(inline, 0, 'font-size')).toBe('calc(24pt * var(--rd-scale, 1))')
+        expect(value(inline, 1, 'font-size')).toBe('0.625em')
+    })
+
+    it('scales the absolute sizes of the style attributes', async () => {
+        const content = await makeLoader({ book: book() }).load(0)
+        const style = (id: string) => content.body.querySelector<HTMLElement>(`#${id}`)!.style
+
+        expect(style('a').getPropertyValue('font-size')).toBe('calc(10px * var(--rd-scale, 1))')
+        expect(style('a').getPropertyValue('line-height')).toBe('calc(12px * var(--rd-scale, 1))')
+        expect(style('a').getPropertyPriority('line-height')).toBe('important')
+        expect(style('b').getPropertyValue('font-size')).toBe('1.125em')
+        expect(style('b').getPropertyValue('line-height')).toBe('1.5')
+        expect(style('c').getPropertyValue('font-size')).toBe('0.9em')
+        expect(style('c').color).toBe('red')
+    })
+
+    it('gives each SVG drawing a scale of 1, so that its text keeps its size', async () => {
+        const drawing = createFakeBook({
+            files: {
+                'ch.xhtml': chapter(
+                    '<svg xmlns="http://www.w3.org/2000/svg" id="plain" viewBox="0 0 100 50">' +
+                        '<text id="label" x="1" y="9" style="font-size: 10px">Label</text>' +
+                        '<svg id="inner"><text>Inner</text></svg></svg>' +
+                        '<svg xmlns="http://www.w3.org/2000/svg" id="styled" ' +
+                        'style="background-image: url(a.png); font-size: 12pt"><text>T</text></svg>' +
+                        '<p id="p" style="font-size: 10px">Text</p>',
+                ),
+                'a.png': 'a',
+            },
+            spine: ['ch.xhtml'],
+        })
+        const content = await makeLoader({ book: drawing }).load(0)
+        const style = (id: string) =>
+            content.body.querySelector<HTMLElement | SVGElement>(`#${id}`)!.style
+
+        // The declaration stays a product. The scale of the drawing makes it the book value.
+        expect(style('label').getPropertyValue('font-size')).toBe('calc(10px * var(--rd-scale, 1))')
+        expect(style('plain').getPropertyValue('--rd-scale')).toBe('1')
+        expect(style('inner').getPropertyValue('--rd-scale')).toBe('1')
+        // The book style of the element stays, also when it is applied after a file read.
+        expect(style('styled').getPropertyValue('--rd-scale')).toBe('1')
+        expect(style('styled').getPropertyValue('font-size')).toBe(
+            'calc(12pt * var(--rd-scale, 1))',
+        )
+        expect(style('styled').backgroundImage).toContain('blob:test/')
+        expect(style('p').getPropertyValue('--rd-scale')).toBe('')
+        expect(content.root.style.getPropertyValue('--rd-scale')).toBe('')
+    })
+})
+
 describe('createContentLoader: cache', () => {
     it('gives the same chapter for a second call', async () => {
         const book = makeBook()
@@ -382,6 +504,44 @@ describe('createContentLoader: imagesReady', () => {
 
         expect(await settlesIn(first.imagesReady, 50)).toBe('ready')
         expect(await settlesIn(second.imagesReady, 50)).toBe('ready')
+    })
+})
+
+describe('createContentLoader: data URL images', () => {
+    const DATA_URL = 'data:image/png;base64,iVBORw0KGgo='
+    const book = () =>
+        createFakeBook({
+            files: {
+                'ch.xhtml': chapter(
+                    `<p>One <img id="data" src="${DATA_URL}" alt=""/></p>` +
+                        `<svg xmlns="http://www.w3.org/2000/svg"><image href="${DATA_URL}"/></svg>`,
+                ),
+            },
+            spine: ['ch.xhtml'],
+        })
+
+    it('keeps the data URL and makes no object URL', async () => {
+        const content = await makeLoader({ book: book() }).load(0)
+
+        expect(content.body.querySelector('img')!.getAttribute('src')).toBe(DATA_URL)
+        expect(content.body.querySelector('image')!.getAttribute('href')).toBe(DATA_URL)
+        expect(created.size).toBe(0)
+    })
+
+    it('waits for an image with a data URL', async () => {
+        const content = await makeLoader({ book: book(), imageTimeoutMs: 10_000 }).load(0)
+
+        expect(await settlesIn(content.imagesReady, 5)).toBe('pending')
+        content.body.querySelector('img')!.dispatchEvent(new Event('load'))
+        expect(await settlesIn(content.imagesReady, 50)).toBe('ready')
+    })
+
+    it('revokes nothing for a data URL when the loader is disposed', async () => {
+        const contentLoader = makeLoader({ book: book() })
+        await contentLoader.load(0)
+        contentLoader.dispose()
+
+        expect(revoked).toEqual([])
     })
 })
 

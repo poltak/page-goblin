@@ -12,6 +12,8 @@ import {
     resolveCssUrls,
     rewriteCssUrls,
     rewriteSelector,
+    scaleFontSize,
+    scaleLineHeight,
     unregisterFontFaces,
     type FontFaceSpec,
 } from './css'
@@ -748,6 +750,77 @@ describe('buildSheet', () => {
         expect(rules[2].style.getPropertyValue('position')).toBe('sticky')
     })
 
+    it('makes the absolute font sizes and line heights follow the reader setting', () => {
+        const { sheet } = buildSheet(
+            'p { font-size: 12pt; line-height: 14pt }\n' +
+                '.a { font-size: 16PX !important; line-height: 1.2 }\n' +
+                '.b { font-size: small; line-height: 18px !important }\n' +
+                '.c { font-size: 0.9em; line-height: 120% }\n' +
+                '.d { font-size: larger; line-height: normal; margin-top: 12pt }\n' +
+                '.e { font-size: calc(1em + 10px); line-height: var(--leading) }\n' +
+                '@media screen { .f { font-size: 10pt } @supports (display: grid) { .g { font-size: xx-large } } }\n' +
+                '.h { font-size: 0; line-height: 0 }\n' +
+                '@keyframes grow { from { font-size: 10px } to { font-size: 2em } }',
+        )
+        const rules = [...sheet!.cssRules] as CSSStyleRule[]
+        const value = (index: number, name: string) => rules[index].style.getPropertyValue(name)
+        const priority = (index: number, name: string) =>
+            rules[index].style.getPropertyPriority(name)
+
+        expect(value(0, 'font-size')).toBe('calc(12pt * var(--rd-scale, 1))')
+        expect(value(0, 'line-height')).toBe('calc(14pt * var(--rd-scale, 1))')
+        expect(priority(0, 'font-size')).toBe('')
+        expect(value(1, 'font-size')).toBe('calc(16px * var(--rd-scale, 1))')
+        expect(priority(1, 'font-size')).toBe('important')
+        expect(value(1, 'line-height')).toBe('1.2')
+        expect(value(2, 'font-size')).toBe('0.8125em')
+        expect(value(2, 'line-height')).toBe('calc(18px * var(--rd-scale, 1))')
+        expect(priority(2, 'line-height')).toBe('important')
+        expect(value(3, 'font-size')).toBe('0.9em')
+        expect(value(3, 'line-height')).toBe('120%')
+        expect(value(4, 'font-size')).toBe('larger')
+        expect(value(4, 'line-height')).toBe('normal')
+        expect(value(4, 'margin-top')).toBe('12pt')
+        expect(value(5, 'font-size')).toBe('calc(1em + 10px)')
+        expect(value(5, 'line-height')).toBe('var(--leading)')
+
+        const media = sheet!.cssRules[6] as CSSMediaRule
+        expect((media.cssRules[0] as CSSStyleRule).style.getPropertyValue('font-size')).toBe(
+            'calc(10pt * var(--rd-scale, 1))',
+        )
+        const supports = media.cssRules[1] as CSSSupportsRule
+        expect((supports.cssRules[0] as CSSStyleRule).style.getPropertyValue('font-size')).toBe(
+            '2em',
+        )
+        expect(value(7, 'font-size')).not.toContain('calc')
+        expect(value(7, 'line-height')).toBe('0')
+
+        const frames = (sheet!.cssRules[8] as CSSKeyframesRule).cssRules
+        expect((frames[0] as CSSKeyframeRule).style.getPropertyValue('font-size')).toBe(
+            'calc(10px * var(--rd-scale, 1))',
+        )
+        expect((frames[1] as CSSKeyframeRule).style.getPropertyValue('font-size')).toBe('2em')
+    })
+
+    it('scales the sizes of a font shorthand through its parts', () => {
+        const { sheet } = buildSheet(
+            'h1 { font: bold 12pt/14pt serif }\n' +
+                'h2 { font: 100% serif }\n' +
+                'h3 { font: var(--heading-font) }',
+        )
+        const rules = [...sheet!.cssRules] as CSSStyleRule[]
+
+        expect(rules[0].style.getPropertyValue('font-size')).toBe('calc(12pt * var(--rd-scale, 1))')
+        expect(rules[0].style.getPropertyValue('line-height')).toBe(
+            'calc(14pt * var(--rd-scale, 1))',
+        )
+        expect(rules[0].style.getPropertyValue('font-weight')).toBe('bold')
+        expect(rules[0].style.getPropertyValue('font-family')).toBe('serif')
+        expect(rules[1].style.getPropertyValue('font-size')).toBe('100%')
+        // A shorthand with var() has no parts. It stays as written.
+        expect(rules[2].style.getPropertyValue('font')).toBe('var(--heading-font)')
+    })
+
     it('takes the font faces out of the sheet and returns them', () => {
         const { sheet, fontFaces } = buildSheet(
             '@font-face { font-family: "Book Serif"; src: url("blob:test/a.woff2") format("woff2"), url("blob:test/a.ttf"); font-weight: 700; font-style: italic; font-stretch: condensed; unicode-range: U+0-7F; font-display: swap }\n' +
@@ -948,7 +1021,201 @@ describe('buildSheet', () => {
     })
 })
 
+describe('scaleFontSize', () => {
+    const scaled = (length: string) => `calc(${length} * var(--rd-scale, 1))`
+
+    it('multiplies one absolute length by the scale of the reader', () => {
+        const cases: [string, string][] = [
+            ['12pt', '12pt'],
+            ['16px', '16px'],
+            ['1pc', '1pc'],
+            ['0.5in', '0.5in'],
+            ['.5in', '.5in'],
+            ['1cm', '1cm'],
+            ['4.2mm', '4.2mm'],
+            ['20q', '20q'],
+            ['20Q', '20Q'],
+            ['12PT', '12PT'],
+            ['12Px', '12Px'],
+            ['10.5pt', '10.5pt'],
+            ['10.pt', '10.pt'],
+            ['  14px  ', '14px'],
+            ['\n9pt\t', '9pt'],
+            ['+12px', '12px'],
+            ['1e1px', '1e1px'],
+            ['1.2E+1pt', '1.2E+1pt'],
+            ['0.01px', '0.01px'],
+        ]
+
+        for (const [value, length] of cases) {
+            expect(scaleFontSize(value), value).toBe(scaled(length))
+        }
+    })
+
+    it('changes an absolute keyword to a size in em', () => {
+        const cases: [string, string][] = [
+            ['xx-small', '0.5625em'],
+            ['x-small', '0.625em'],
+            ['small', '0.8125em'],
+            ['medium', '1em'],
+            ['large', '1.125em'],
+            ['x-large', '1.5em'],
+            ['xx-large', '2em'],
+            ['xxx-large', '3em'],
+            ['SMALL', '0.8125em'],
+            ['X-Large', '1.5em'],
+            ['  medium ', '1em'],
+        ]
+
+        for (const [value, expected] of cases) {
+            expect(scaleFontSize(value), value).toBe(expected)
+        }
+    })
+
+    it('gives null for a relative value', () => {
+        const values = [
+            '1em',
+            '0.9em',
+            '1.2rem',
+            '120%',
+            '2ex',
+            '3ch',
+            '1.5',
+            'smaller',
+            'larger',
+            '2vw',
+            '1vh',
+            '1vmin',
+            '5cqw',
+            '1lh',
+            '1rlh',
+            '1cap',
+            '1ic',
+        ]
+
+        for (const value of values) expect(scaleFontSize(value), value).toBeNull()
+    })
+
+    it('gives null for a value that already has a function', () => {
+        const values = [
+            'calc(12pt * var(--rd-scale, 1))',
+            'calc(12px + 1em)',
+            'var(--size)',
+            'var(--size, 12px)',
+            'min(12px, 1em)',
+            'max(10pt, 2vw)',
+            'clamp(12px, 2vw, 20px)',
+            'env(safe-area-inset-top, 12px)',
+        ]
+
+        for (const value of values) expect(scaleFontSize(value), value).toBeNull()
+    })
+
+    it('gives null for a keyword that is not a size, and for a bad value', () => {
+        const values = [
+            '',
+            '   ',
+            'inherit',
+            'initial',
+            'unset',
+            'revert',
+            'revert-layer',
+            'normal',
+            'math',
+            'none',
+            'constructor',
+            'toString',
+            '__proto__',
+            'px',
+            '12',
+            '12 px',
+            '12px 14px',
+            '12px/14px',
+            '12px !important',
+            '-12px',
+            '12pxx',
+            '12pts',
+            '1e',
+            '1.2.3px',
+            '12px;',
+            'x12px',
+            '#12px',
+        ]
+
+        for (const value of values) expect(scaleFontSize(value), value).toBeNull()
+    })
+
+    it('gives null for a length of zero', () => {
+        for (const value of ['0', '0px', '0.0pt', '.0in', '0e3px']) {
+            expect(scaleFontSize(value), value).toBeNull()
+        }
+    })
+})
+
+describe('scaleLineHeight', () => {
+    it('multiplies one absolute length by the scale of the reader', () => {
+        expect(scaleLineHeight('14pt')).toBe('calc(14pt * var(--rd-scale, 1))')
+        expect(scaleLineHeight(' 18.5PX ')).toBe('calc(18.5PX * var(--rd-scale, 1))')
+        expect(scaleLineHeight('0.25in')).toBe('calc(0.25in * var(--rd-scale, 1))')
+        expect(scaleLineHeight('5mm')).toBe('calc(5mm * var(--rd-scale, 1))')
+    })
+
+    it('gives null for all other values', () => {
+        const values = [
+            '1.2',
+            '1',
+            '0',
+            '0px',
+            'normal',
+            '120%',
+            '1.4em',
+            '1.4rem',
+            '2ex',
+            '1lh',
+            'inherit',
+            // A font size keyword is not a line height.
+            'medium',
+            'large',
+            'calc(14pt * var(--rd-scale, 1))',
+            'var(--leading)',
+            '-14pt',
+            '',
+        ]
+
+        for (const value of values) expect(scaleLineHeight(value), value).toBeNull()
+    })
+})
+
 describe('fixDeclarations', () => {
+    it('scales the absolute sizes of an inline style and keeps the priority', () => {
+        const element = document.createElement('p')
+        element.style.cssText =
+            'font-size: 11pt !important; line-height: 13pt; margin: 12pt; text-indent: 2em'
+
+        fixDeclarations(element.style)
+
+        expect(element.style.getPropertyValue('font-size')).toBe('calc(11pt * var(--rd-scale, 1))')
+        expect(element.style.getPropertyPriority('font-size')).toBe('important')
+        expect(element.style.getPropertyValue('line-height')).toBe(
+            'calc(13pt * var(--rd-scale, 1))',
+        )
+        expect(element.style.getPropertyPriority('line-height')).toBe('')
+        // Only the two font properties change.
+        expect(element.style.margin).toBe('12pt')
+        expect(element.style.textIndent).toBe('2em')
+    })
+
+    it('gives the same result when it runs two times', () => {
+        const element = document.createElement('p')
+        element.style.cssText = 'font-size: 11pt; line-height: 13pt'
+
+        fixDeclarations(element.style)
+        const first = element.style.cssText
+        fixDeclarations(element.style)
+
+        expect(element.style.cssText).toBe(first)
+    })
+
     it('changes the declarations of an inline style', () => {
         const element = document.createElement('div')
         element.style.cssText = 'page-break-before: always; position: fixed; color: red'

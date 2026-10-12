@@ -35,6 +35,8 @@ export {
 } from './css'
 export type { BuiltSheet, CssImport, CssSource, FontFaceSpec } from './css'
 
+export { normalizeLanguage } from './language'
+
 export { createResourceStore } from './resources'
 export type { ResourceStore } from './resources'
 

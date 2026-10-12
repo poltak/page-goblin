@@ -102,6 +102,22 @@ const STRICT_HINT = /\\|image-set|src\(/i
 const URL_FUNCTION_HINT = /url\(|image-set\(|src\(/i
 const PAGE_BREAKS = new Set(['page', 'left', 'right', 'recto', 'verso', 'always'])
 
+// The sizes that browsers give the absolute keywords, as a part of the parent size.
+const FONT_SIZE_KEYWORDS = new Map([
+    ['xx-small', '0.5625em'],
+    ['x-small', '0.625em'],
+    ['small', '0.8125em'],
+    ['medium', '1em'],
+    ['large', '1.125em'],
+    ['x-large', '1.5em'],
+    ['xx-large', '2em'],
+    ['xxx-large', '3em'],
+])
+const ABSOLUTE_LENGTH = /^\+?((?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?(?:px|pt|pc|in|cm|mm|q))$/i
+
+/** The reader views set this property on `rd-html` to the font size setting divided by 16. */
+export const SCALE_PROPERTY = '--rd-scale'
+
 export function decodeCssEscapes(text: string): string {
     if (!text.includes('\\')) return text
     return text.replace(
@@ -483,17 +499,67 @@ function fixBreak(style: CSSStyleDeclaration, side: 'before' | 'after'): void {
 }
 
 /**
- * Change the declarations that do not work in the reader. A forced page break becomes a
- * column break, because the paged view makes its pages with CSS columns. `position: fixed`
- * becomes `absolute`, so that book content cannot cover the controls of the app. With
- * `strict`, the function also removes a declaration that can load a remote URL.
+ * A length in absolute units as a product with the scale of the reader, or null when the
+ * value is not one absolute length. A length of zero stays as written.
  */
-export function fixDeclarations(style: CSSStyleDeclaration, strict = false): void {
+function scaleLength(value: string): string | null {
+    const match = ABSOLUTE_LENGTH.exec(value.trim())
+    if (!match || !(parseFloat(match[1]) > 0)) return null
+    return `calc(${match[1]} * var(${SCALE_PROPERTY}, 1))`
+}
+
+/**
+ * The value for a `font-size` declaration of the book that follows the font size setting of
+ * the reader, or null when the value needs no change. An absolute keyword becomes a size in
+ * `em`. A relative value, `calc()` and `var()` stay as written.
+ */
+export function scaleFontSize(value: string): string | null {
+    return FONT_SIZE_KEYWORDS.get(value.trim().toLowerCase()) ?? scaleLength(value)
+}
+
+/** The same as `scaleFontSize` for `line-height`. A number without a unit stays as written. */
+export function scaleLineHeight(value: string): string | null {
+    return scaleLength(value)
+}
+
+function scaleDeclaration(style: CSSStyleDeclaration, name: 'font-size' | 'line-height'): void {
+    const value = style.getPropertyValue(name)
+    if (!value) return
+    const next = name === 'font-size' ? scaleFontSize(value) : scaleLineHeight(value)
+    if (next !== null) style.setProperty(name, next, style.getPropertyPriority(name))
+}
+
+/**
+ * Many books set sizes in absolute units, and the font size setting then changes nothing.
+ * The object model gives the parts of a `font` shorthand as `font-size` and `line-height`,
+ * so this also changes the shorthand. A shorthand with `var()` has no parts and stays.
+ */
+function scaleFonts(style: CSSStyleDeclaration): void {
+    scaleDeclaration(style, 'font-size')
+    scaleDeclaration(style, 'line-height')
+}
+
+/**
+ * A forced page break becomes a column break, because the paged view makes its pages with
+ * CSS columns. `position: fixed` becomes `absolute`, so that book content cannot cover the
+ * controls of the app.
+ */
+function fixLayout(style: CSSStyleDeclaration): void {
     fixBreak(style, 'before')
     fixBreak(style, 'after')
     if (style.getPropertyValue('position') === 'fixed') {
         style.setProperty('position', 'absolute', style.getPropertyPriority('position'))
     }
+}
+
+/**
+ * Change the declarations that do not work in the reader: forced page breaks, fixed
+ * positions, and font sizes and line heights in absolute units. With `strict`, the function
+ * also removes a declaration that can load a remote URL.
+ */
+export function fixDeclarations(style: CSSStyleDeclaration, strict = false): void {
+    fixLayout(style)
+    scaleFonts(style)
     if (strict) removeRemoteValues(style)
 }
 
@@ -576,7 +642,8 @@ interface CleanState {
     rewriteSelectors: boolean
     /** True when a rule can select the shadow host. */
     hostRules: boolean
-    fixDeclarations: boolean
+    fixLayout: boolean
+    scaleFonts: boolean
     strict: boolean
     /** True when the object model did not give the `src` of a font face (jsdom). */
     missingFontSource: boolean
@@ -636,7 +703,9 @@ function cleanRules(owner: RuleOwner, state: CleanState): void {
         // Style rules, keyframes and nested declarations have a `style`.
         const { style, cssRules } = rule as Partial<CSSStyleRule>
         if (style) {
-            if (state.fixDeclarations) fixDeclarations(style, state.strict)
+            if (state.fixLayout) fixLayout(style)
+            if (state.scaleFonts) scaleFonts(style)
+            if (state.strict) removeRemoteValues(style)
         } else if (
             state.strict &&
             !cssRules &&
@@ -681,7 +750,8 @@ export function buildSheet(cssText: string): BuiltSheet {
         fontFaces: [],
         rewriteSelectors: SELECTOR_HINT.test(cssText),
         hostRules: HOST_HINT.test(cssText),
-        fixDeclarations: strict || /break-|position/i.test(cssText),
+        fixLayout: strict || /break-|position/i.test(cssText),
+        scaleFonts: strict || /font|line-height/i.test(cssText),
         strict,
         missingFontSource: false,
     }

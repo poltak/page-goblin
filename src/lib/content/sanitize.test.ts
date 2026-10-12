@@ -55,10 +55,12 @@ const FORBIDDEN_ELEMENTS = new Set(
 )
 const FORBIDDEN_ATTRIBUTES = new Set(
     (
-        'src srcset srcdoc action formaction poster background ping data style xlink:href ' +
+        'srcset srcdoc action formaction poster background ping data style xlink:href ' +
         'lowsrc codebase manifest usemap target-x'
     ).split(' '),
 )
+const RASTER_DATA_URL = /^data:image\/(?:png|jpe?g|gif|webp)[;,]/i
+const PAINT_SERVERS = new Set(['linearGradient', 'radialGradient', 'pattern'])
 
 /** The security rules of the module, for any tree that the sanitiser returns. */
 function expectSafe(root: Element): void {
@@ -76,9 +78,14 @@ function expectSafe(root: Element): void {
             expect(FORBIDDEN_ATTRIBUTES.has(attributeName), label).toBe(false)
             expect(/(?:java|vb)script:/i.test(value.replace(/\s/g, '')), label).toBe(false)
 
-            if (attributeName === 'href') {
+            if (attributeName === 'src') {
+                expect(name, label).toBe('img')
+                expect(value, label).toMatch(RASTER_DATA_URL)
+            } else if (attributeName === 'href') {
                 if (name === 'a') expect(value, label).toMatch(/^(?:https?:\/\/|mailto:)/)
-                else if (name === 'use') expect(value, label).toMatch(/^#/)
+                else if (name === 'use' || PAINT_SERVERS.has(name))
+                    expect(value, label).toMatch(/^#/)
+                else if (name === 'image') expect(value, label).toMatch(RASTER_DATA_URL)
                 else expect.fail(`href on ${label}`)
             } else if (attributeName !== 'data-rd-style') {
                 expect(/(?:https?:)?\/\//i.test(value), label).toBe(false)
@@ -141,6 +148,46 @@ describe('sanitizeDocument: structure', () => {
 
         expect(lang).toBeNull()
         expect(dir).toBeNull()
+    })
+
+    it('normalises the language of the document', () => {
+        const cases: [string, string, string | null][] = [
+            ['xml:lang="en_US"', '', 'en-US'],
+            ['lang="ENG"', '', 'en'],
+            ['lang="fr"', 'lang="DEU"', 'de'],
+            ['lang="pt-BR"', 'xml:lang="und"', 'pt-BR'],
+            ['lang="und"', 'lang="it"', 'it'],
+            ['lang="und"', 'lang=""', null],
+            ['lang="english"', '', null],
+        ]
+
+        for (const [htmlAttributes, bodyAttributes, expected] of cases) {
+            const { root, body, lang } = sanitize({
+                body: '<p>x</p>',
+                htmlAttributes,
+                bodyAttributes,
+            })
+            const label = `${htmlAttributes} ${bodyAttributes}`
+            expect(lang, label).toBe(expected)
+            // The element with the language has the normal form. A value that names no
+            // language is not in the result.
+            expect(body.getAttribute('lang') ?? root.getAttribute('lang'), label).toBe(expected)
+            for (const element of [root, body]) {
+                expect(['und', ''], label).not.toContain(element.getAttribute('lang'))
+            }
+        }
+    })
+
+    it('normalises the language of an element and keeps a value that names no language', () => {
+        expect(
+            bodyHtml(
+                '<p lang="en_GB">a</p><p xml:lang="FRA">b</p><p lang="zxx">c</p><p lang="">d</p>' +
+                    '<p lang="x-klingon">e</p>',
+            ),
+        ).toBe(
+            '<p lang="en-GB">a</p><p lang="fr">b</p><p lang="zxx">c</p><p lang="">d</p>' +
+                '<p lang="x-klingon">e</p>',
+        )
     })
 
     it('keeps text of CDATA sections and drops comments', () => {
@@ -300,6 +347,80 @@ describe('sanitizeDocument: attributes', () => {
         )
     })
 
+    it('keeps a style attribute with a property that only ends in behavior', () => {
+        const safe = [
+            'scroll-behavior: smooth',
+            'overscroll-behavior: contain; color: red',
+            'OVERSCROLL-BEHAVIOR-Y: none',
+            'scroll-behavior/**/: smooth',
+            'transition: scroll-behavior 1s',
+            'will-change: behavior',
+            '-ms-behavior: none',
+            'margin: 0 /* behavior */',
+        ]
+
+        for (const style of safe) {
+            const { body } = sanitize({ body: `<p style="${style}">x</p>` })
+            expect(body.querySelector('p')!.getAttribute('data-rd-style'), style).toBe(style)
+        }
+    })
+
+    it('finds a behavior declaration in the same way as a slow reference', () => {
+        // The reference reads each comment again for each name, so it is only for short text.
+        const reference = /(?:^|[^\w-])behavior(?:[ \t\n\r\f]|\/\*(?:(?!\*\/)[\s\S])*\*\/)*:/i
+        const parts = ['behavior', 'BEHAVIOR', '/*', '*/', ' ', ':', ';', 'x', '-', '/', '*']
+        let seed = 12345
+        const random = (limit: number) => {
+            seed = (seed * 1103515245 + 12345) & 0x7fffffff
+            return seed % limit
+        }
+
+        for (let round = 0; round < 2000; round++) {
+            let style = ''
+            for (let count = 1 + random(24); count > 0; count--) {
+                style += parts[random(parts.length)]
+            }
+            const { body } = sanitize({ body: `<p style="${style}">x</p>` })
+            const kept = body.querySelector('p')!.hasAttribute('data-rd-style')
+            expect(kept, style).toBe(!reference.test(style))
+        }
+    })
+
+    it('reads a long style attribute with many comment starts in linear time', () => {
+        const style = 'behavior/*'.repeat(50_000)
+        const before = performance.now()
+        const { body } = sanitize({ body: `<p style="${style}">x</p>` })
+
+        expect(body.querySelector('p')!.getAttribute('data-rd-style')).toBe(style)
+        expect(performance.now() - before).toBeLessThan(2000)
+    })
+
+    it('reads the text after a comment one time for all names before the comment', () => {
+        // Each name has a comment start after it, and all comments end at the same mark.
+        const style = ' behavior/*'.repeat(10_000) + '*/' + ' '.repeat(200_000) + 'x'
+        const before = performance.now()
+        const { body } = sanitize({ body: `<p style="${style}">x</p>` })
+
+        expect(body.querySelector('p')!.getAttribute('data-rd-style')).toBe(style)
+        expect(performance.now() - before).toBeLessThan(2000)
+    })
+
+    it('finds a behavior declaration after names that share one comment end', () => {
+        const shared = ' behavior/*'.repeat(50) + '*/'
+        const unsafe = [
+            `${shared} x; behavior/* y */ : url(a.htc)`,
+            `${shared} /* y */ : url(a.htc)`,
+            `${shared}:url(a.htc)`,
+        ]
+
+        for (const style of unsafe) {
+            const { body } = sanitize({ body: `<p style="${style}">x</p>` })
+            expect(body.innerHTML, style).toBe('<p>x</p>')
+        }
+        const { body } = sanitize({ body: `<p style="${shared} x: 1">x</p>` })
+        expect(body.querySelector('p')!.hasAttribute('data-rd-style')).toBe(true)
+    })
+
     it('keeps a safe style attribute as data-rd-style and sets no real style', () => {
         const { body } = sanitize({ body: '<p style="color: red; margin-left: 2em">x</p>' })
         const p = body.querySelector('p')!
@@ -315,12 +436,23 @@ describe('sanitizeDocument: attributes', () => {
             'background: url(javascript:alert(1))',
             'background: url(JaVaScRiPt:alert(1))',
             'behavior: url(a.htc)',
+            'BEHAVIOR : url(a.htc)',
+            'color: red;behavior:url(a.htc)',
+            'color: red;&#10;&#9;behavior&#10;: url(a.htc)',
+            'scroll-behavior: smooth; behavior: url(a.htc)',
+            'be\\68 avior: url(a.htc)',
+            '\\62 ehavior: url(a.htc)',
+            'behavior/* x */: url(a.htc)',
+            '/* x */behavior /* y */ /* z */: url(a.htc)',
+            "content: '/*'; be\\68 avior/**/: url(a.htc); quotes: '*/'",
+            "content: 'behavior/*'; behavior: url(a.htc)",
             '-moz-binding: url(a.xml#x)',
             '@import url(https://example.com/a.css)',
             '@IMPORT "a.css"',
             'width: e\\78pression(alert(1))',
             'width: exp/**/ression(alert(1))',
             'background: url(java\\73 cript:alert(1))',
+            "content: '/*'; width: e\\78pression(alert(1)); quotes: '*/'",
         ]
 
         for (const style of unsafe) {
@@ -437,11 +569,19 @@ describe('sanitizeDocument: images', () => {
         expect(images[0].getAttribute('data-rd-src')).toBe('OEBPS/images/b b.jpg')
     })
 
-    it('sets no source for a remote image, a data URL or a missing file', () => {
+    it('sets no source for a remote image, an unsafe data URL or a missing file', () => {
         const sources = [
             'https://example.com/a.png',
             '//example.com/a.png',
-            'data:image/png;base64,AAAA',
+            'data:image/svg+xml,&lt;svg xmlns=&quot;http://www.w3.org/2000/svg&quot;/&gt;',
+            'data:image/svg+xml;base64,PHN2Zy8+',
+            'DATA:IMAGE/SVG+XML,x',
+            'data:text/html,&lt;script&gt;alert(1)&lt;/script&gt;',
+            'data:image/pngx;base64,AAAA',
+            'data:image/png',
+            'data:,AAAA',
+            'data:;base64,AAAA',
+            'x data:image/png;base64,AAAA',
             '../images/missing.png',
             'javascript:alert(1)',
             '',
@@ -453,6 +593,50 @@ describe('sanitizeDocument: images', () => {
             expect(images).toEqual([])
             expectSafe(root)
         }
+    })
+
+    it('keeps a data URL of a raster image and adds the element to the images', () => {
+        const urls = [
+            'data:image/png;base64,iVBORw0KGgo=',
+            'data:image/jpeg;base64,/9j/4AAQ//Z',
+            'data:image/jpg;base64,/9j/4AAQ',
+            'data:image/gif;base64,R0lGODlhAQABAAAAACw=',
+            'data:image/webp;base64,UklGRg==',
+            'DATA:IMAGE/PNG;BASE64,AAAA',
+            'data:image/gif,GIF89a',
+            'data:image/png;charset=utf-8;base64,AAAA',
+        ]
+
+        for (const url of urls) {
+            const { root, body, images } = sanitize({ body: `<img src="${url}" alt="A"/>` })
+            const img = body.querySelector('img')!
+            expect(img.getAttribute('src'), url).toBe(url)
+            expect(img.hasAttribute('data-rd-src')).toBe(false)
+            expect(images).toEqual([img])
+            expectSafe(root)
+        }
+    })
+
+    it('removes white space before a data URL', () => {
+        const { body } = sanitize({
+            body: '<img src=" &#10;&#9;data:image/png;base64,AAAA" alt=""/>',
+        })
+
+        expect(body.querySelector('img')!.getAttribute('src')).toBe('data:image/png;base64,AAAA')
+    })
+
+    it('sets no source for a data URL above 2 MB', () => {
+        const start = 'data:image/png;base64,'
+        const limit = 2 * 1024 * 1024
+        const atLimit = start + 'A'.repeat(limit - start.length)
+
+        const kept = sanitize({ body: `<img src="${atLimit}" alt=""/>` })
+        const removed = sanitize({ body: `<img src="${atLimit}A" alt=""/>` })
+
+        expect(kept.body.querySelector('img')!.getAttribute('src')).toHaveLength(limit)
+        expect(kept.images).toHaveLength(1)
+        expect(removed.body.innerHTML).toBe('<img alt="" decoding="async">')
+        expect(removed.images).toEqual([])
     })
 
     it('removes srcset and other loading attributes', () => {
@@ -602,6 +786,135 @@ describe('sanitizeDocument: SVG and MathML', () => {
         expect(images).toEqual(found.slice(0, 2))
         expect(found[0].getAttribute('width')).toBe('600')
         for (const image of found) expect(image.hasAttribute('href')).toBe(false)
+        expectSafe(root)
+    })
+
+    it('keeps a data URL of a raster image in an SVG image', () => {
+        const { root, body, images } = sanitize({
+            body:
+                '<svg xmlns="http://www.w3.org/2000/svg">' +
+                '<image xlink:href="data:image/png;base64,AAAA" width="6" height="8"/>' +
+                '<image href="data:image/jpeg;base64,/9j/"/>' +
+                '<image href="data:image/svg+xml;base64,PHN2Zy8+"/>' +
+                '<image xlink:href="data:text/html,x"/></svg>',
+        })
+        const found = [...body.querySelectorAll('image')]
+
+        expect(found.map((image) => image.getAttribute('href'))).toEqual([
+            'data:image/png;base64,AAAA',
+            'data:image/jpeg;base64,/9j/',
+            null,
+            null,
+        ])
+        expect(images).toEqual(found.slice(0, 2))
+        for (const image of found) expect(image.hasAttribute('data-rd-src')).toBe(false)
+        expectSafe(root)
+    })
+
+    it('keeps more presentation attributes of SVG', () => {
+        const { root, body } = sanitize({
+            body:
+                '<svg xmlns="http://www.w3.org/2000/svg">' +
+                '<pattern id="p" patternUnits="userSpaceOnUse" patternContentUnits="objectBoundingBox" ' +
+                'patternTransform="rotate(45)" width="4" height="4"/>' +
+                '<radialGradient id="r" fx="0.2" fy="0.3" spreadMethod="reflect"/>' +
+                '<path d="M0 0L1 1" stroke-miterlimit="4" stroke-dashoffset="2" ' +
+                'vector-effect="non-scaling-stroke" marker-start="url(#m)" marker-mid="url(#m)" ' +
+                'marker-end="url(#m)"/>' +
+                '<text text-decoration="underline" letter-spacing="2" dominant-baseline="middle" ' +
+                'alignment-baseline="central">T</text></svg>',
+        })
+        const names = (selector: string) => body.querySelector(selector)!.getAttributeNames().sort()
+
+        expect(names('pattern')).toEqual([
+            'height',
+            'id',
+            'patternContentUnits',
+            'patternTransform',
+            'patternUnits',
+            'width',
+        ])
+        expect(names('radialGradient')).toEqual(['fx', 'fy', 'id', 'spreadMethod'])
+        expect(names('path')).toEqual([
+            'd',
+            'marker-end',
+            'marker-mid',
+            'marker-start',
+            'stroke-dashoffset',
+            'stroke-miterlimit',
+            'vector-effect',
+        ])
+        expect(names('text')).toEqual([
+            'alignment-baseline',
+            'dominant-baseline',
+            'letter-spacing',
+            'text-decoration',
+        ])
+        expectSafe(root)
+    })
+
+    it('keeps a marker attribute only when it points into the document', () => {
+        const { root, body } = sanitize({
+            body:
+                '<svg xmlns="http://www.w3.org/2000/svg">' +
+                '<path marker-start="url(#m)" marker-mid="url(https://example.com/a.svg#m)" ' +
+                'marker-end="url(other.svg#m)"/><line marker-end="none"/></svg>',
+        })
+
+        expect(body.querySelector('path')!.getAttributeNames()).toEqual(['marker-start'])
+        expect(body.querySelector('line')!.getAttribute('marker-end')).toBe('none')
+        expectSafe(root)
+    })
+
+    it('keeps the marker element that a marker attribute points to', () => {
+        const { root, body } = sanitize({
+            body:
+                '<svg xmlns="http://www.w3.org/2000/svg"><defs>' +
+                '<marker id="m" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" ' +
+                'markerHeight="6" markerUnits="strokeWidth" orient="auto-start-reverse" ' +
+                'onload="alert(1)" xlink:href="https://example.com/a.svg#m">' +
+                '<path d="M0 0L10 5L0 10z"/><script>alert(1)</script></marker></defs>' +
+                '<line x1="0" y1="0" x2="9" y2="9" marker-end="url(#m)"/></svg>',
+        })
+        const marker = body.querySelector('marker')!
+
+        expect(marker.namespaceURI).toBe(SVG_NS)
+        expect(marker.getAttributeNames().sort()).toEqual([
+            'id',
+            'markerHeight',
+            'markerUnits',
+            'markerWidth',
+            'orient',
+            'refX',
+            'refY',
+            'viewBox',
+        ])
+        expect(marker.innerHTML).toBe('<path d="M0 0L10 5L0 10z"></path>')
+        expect(body.querySelector('line')!.getAttribute('marker-end')).toBe('url(#m)')
+        expectSafe(root)
+    })
+
+    it('keeps the href of a gradient or pattern only when it points into the document', () => {
+        const { root, body } = sanitize({
+            body:
+                '<svg xmlns="http://www.w3.org/2000/svg">' +
+                '<linearGradient id="a" xlink:href="#base"/>' +
+                '<radialGradient id="b" href=" #base"/>' +
+                '<pattern id="c" xlink:href="#tile"/>' +
+                '<linearGradient id="d" xlink:href="https://example.com/a.svg#base" x1="0"/>' +
+                '<radialGradient id="e" href="other.svg#base"/>' +
+                '<pattern id="f" href="data:image/svg+xml,x#tile"/>' +
+                '<linearGradient id="g" href="javascript:alert(1)"/>' +
+                '<stop href="#base"/><rect xlink:href="#base"/></svg>',
+        })
+        const href = (id: string) => body.querySelector(`#${id}`)!.getAttribute('href')
+
+        expect([href('a'), href('b'), href('c')]).toEqual(['#base', '#base', '#tile'])
+        // The element stays and uses its own content.
+        expect([href('d'), href('e'), href('f'), href('g')]).toEqual([null, null, null, null])
+        expect(body.querySelector('#d')!.getAttribute('x1')).toBe('0')
+        expect(body.querySelector('stop')!.hasAttribute('href')).toBe(false)
+        expect(body.querySelector('rect')!.hasAttribute('href')).toBe(false)
         expectSafe(root)
     })
 

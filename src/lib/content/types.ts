@@ -107,6 +107,10 @@ export interface ChapterContent {
     readonly length: number
     /** Element `id` (and `a[name]`) to the chapter offset of the element start. */
     readonly anchors: ReadonlyMap<string, number>
+    /**
+     * A normalised language tag of the document, with the book language as the fallback.
+     * The `rd-html` element has the same value in its `lang` attribute.
+     */
     readonly lang: string | null
     readonly dir: 'ltr' | 'rtl' | null
     /**

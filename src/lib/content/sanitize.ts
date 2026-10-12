@@ -8,6 +8,7 @@
 
 import type { EpubBook } from '$lib/epub/types'
 import { decodeCssEscapes, isSafeMediaQuery } from './css'
+import { normalizeLanguage } from './language'
 import { INTERNAL_LINK_FRAGMENT_ATTR, INTERNAL_LINK_PATH_ATTR } from './types'
 import { resolveFile, resolveHref, wordSet } from './util'
 
@@ -35,11 +36,15 @@ export interface SanitizedDocument {
     root: HTMLElement
     /** An `<rd-body>` element, the only child of `root`. */
     body: HTMLElement
+    /** The language of the document from `normalizeLanguage`, or null when it has none. */
     lang: string | null
     dir: 'ltr' | 'rtl' | null
     /** Stylesheets of the document in cascade order. */
     styleSources: StyleSource[]
-    /** `<img>` and SVG `<image>` elements that have a file of the book in `data-rd-src`. */
+    /**
+     * `<img>` and SVG `<image>` elements that show an image: a file of the book in
+     * `data-rd-src`, or a data URL in `src` (`href` for SVG).
+     */
     images: Element[]
 }
 
@@ -65,7 +70,7 @@ const REMOVED_HTML = wordSet(
 const VOID_HTML = wordSet('area base br col embed hr img input link meta param source track wbr')
 const KEPT_SVG = wordSet(
     'svg g path rect circle ellipse line polyline polygon text tspan defs linearGradient ' +
-        'radialGradient stop clipPath mask pattern image use symbol title desc',
+        'radialGradient stop clipPath mask pattern marker image use symbol title desc',
 )
 
 const GLOBAL_ATTRS = wordSet('id class lang dir title hidden role')
@@ -78,8 +83,13 @@ const SVG_ATTRS = wordSet(
         'fill-rule fill-opacity stroke stroke-width stroke-linecap stroke-linejoin ' +
         'stroke-dasharray stroke-opacity opacity offset stop-color stop-opacity gradientUnits ' +
         'gradientTransform clip-path clip-rule mask font-size font-family font-weight ' +
-        'text-anchor dx dy width height',
+        'text-anchor dx dy width height patternUnits patternContentUnits patternTransform ' +
+        'spreadMethod stroke-miterlimit stroke-dashoffset fx fy text-decoration ' +
+        'letter-spacing dominant-baseline alignment-baseline vector-effect marker-start ' +
+        'marker-mid marker-end markerWidth markerHeight markerUnits refX refY orient',
 )
+// These elements can take their content from a different element of the same document.
+const SVG_PAINT_SERVERS = wordSet('linearGradient radialGradient pattern')
 const SVG_VALUE_FUNCTIONS = wordSet(
     'url rgb rgba hsl hsla translate scale rotate skewx skewy matrix',
 )
@@ -98,7 +108,13 @@ const BODY_ATTRS = wordSet(`id class lang dir ${PENDING_STYLE_ATTR} ${EPUB_TYPE_
 
 const EXTERNAL_PROTOCOLS = wordSet('http: https: mailto:')
 const URL_SCHEME = /^[a-z][a-z\d+.-]*:/i
-const UNSAFE_STYLE = /expression\(|javascript:|behavior|-moz-binding|@import/i
+const UNSAFE_STYLE = /expression\(|javascript:|-moz-binding|@import/i
+const BEHAVIOR = 'behavior'
+const BEHAVIOR_HINT = /behavior/i
+const CSS_SPACE = new Set([' ', '\t', '\n', '\r', '\f'])
+// Raster images only. An SVG image can load other files.
+const DATA_IMAGE = /^data:image\/(?:png|jpe?g|gif|webp)[;,]/i
+const MAX_DATA_URL_LENGTH = 2 * 1024 * 1024
 // The XML and HTML parsers stop before this depth. The limit only protects the call stack.
 const MAX_DEPTH = 1024
 
@@ -153,13 +169,63 @@ function readAttribute(element: Element, name: string): string | null {
     return null
 }
 
+/**
+ * True when a style attribute can have a declaration with the name `behavior`, which loaded
+ * a script in old browsers. `scroll-behavior` and `overscroll-behavior` are different names.
+ * The text must have its CSS escapes decoded. A comment can be between the name and the
+ * colon.
+ */
+function hasBehaviorDeclaration(css: string): boolean {
+    const text = css.toLowerCase()
+    // The first `*/` after the last search position. A later search starts after it, so the
+    // scan reads the text only one time.
+    let close = -1
+    let hasClose = true
+    // The end of the last comment that the scan went over. Many names can have a comment
+    // that ends there. The text after it gave no colon, so it is not read again.
+    let passed = -1
+    names: for (let at = text.indexOf(BEHAVIOR); at >= 0; at = text.indexOf(BEHAVIOR, at + 1)) {
+        if (at > 0 && NAME_CHARACTER.test(text[at - 1])) continue
+        let i = at + BEHAVIOR.length
+        for (;;) {
+            while (CSS_SPACE.has(text[i])) i++
+            if (!text.startsWith('/*', i)) break
+            if (hasClose && close < i + 2) {
+                close = text.indexOf('*/', i + 2)
+                hasClose = close >= 0
+            }
+            if (!hasClose) break
+            if (close + 2 === passed) continue names
+            i = close + 2
+            passed = i
+        }
+        if (text[i] === ':') return true
+    }
+    return false
+}
+
 function isSafeStyle(value: string): boolean {
     if (UNSAFE_STYLE.test(value)) return false
-    // A CSS escape or a comment can hide one of the keywords.
-    if (value.includes('\\') || value.includes('/*')) {
-        return !UNSAFE_STYLE.test(decodeCssEscapes(value.replace(/\/\*[\s\S]*?(?:\*\/|$)/g, '')))
+    // A CSS escape can hide one of the keywords.
+    const escaped = value.includes('\\')
+    const decoded = escaped ? decodeCssEscapes(value) : value
+    if (escaped && UNSAFE_STYLE.test(decoded)) return false
+    // Old browsers ignored a comment inside a keyword.
+    if (value.includes('/*')) {
+        const plain = decodeCssEscapes(value.replace(/\/\*[\s\S]*?(?:\*\/|$)/g, ''))
+        if (UNSAFE_STYLE.test(plain)) return false
     }
-    return true
+    return !(BEHAVIOR_HINT.test(decoded) && hasBehaviorDeclaration(decoded))
+}
+
+/**
+ * The `src` of an image when it is a data URL of a raster image, else null. A browser
+ * removes white space and control characters at the start of a URL.
+ */
+function dataImageUrl(href: string): string | null {
+    if (href.length > MAX_DATA_URL_LENGTH) return null
+    const url = href.replace(/^[\u0000-\u0020]+/, '')
+    return DATA_IMAGE.test(url) ? url : null
 }
 
 /**
@@ -218,13 +284,16 @@ function copyAttributes(source: Element, target: Element): void {
         const name = svg ? attribute.name : attribute.name.toLowerCase()
 
         if (namespace === XML_NS ? attribute.localName === 'lang' : name === 'xml:lang') {
-            xmlLang = value
+            xmlLang = normalizeLanguage(value) ?? value
         } else if (namespace === OPS_NS ? attribute.localName === 'type' : name === 'epub:type') {
             target.setAttribute(EPUB_TYPE_ATTR, value)
         } else if (namespace !== null || name.startsWith('on')) {
             continue
         } else if (name === 'style') {
             if (isSafeStyle(value)) target.setAttribute(PENDING_STYLE_ATTR, value)
+        } else if (name === 'lang') {
+            // A value such as `en_US` or `eng` gives no hyphenation in a browser.
+            target.setAttribute(name, normalizeLanguage(value) ?? value)
         } else if (
             GLOBAL_ATTRS.has(name) ||
             (name.startsWith('aria-') && /^aria-[a-z]+$/.test(name)) ||
@@ -274,6 +343,16 @@ function readMedia(element: Element): string | null {
 function readDirection(element: Element): 'ltr' | 'rtl' | null {
     const dir = (element.getAttribute('dir') ?? '').toLowerCase()
     return dir === 'ltr' || dir === 'rtl' ? dir : null
+}
+
+/**
+ * The language of `rd-html` or `rd-body`. A value that names no language is removed, so that
+ * the element gets the language of its parent.
+ */
+function documentLanguage(element: Element): string | null {
+    const lang = normalizeLanguage(element.getAttribute('lang'))
+    if (lang === null) element.removeAttribute('lang')
+    return lang
 }
 
 function appendText(target: Node, data: string): void {
@@ -360,20 +439,26 @@ class TreeBuilder {
         const name = source.localName
         if (!KEPT_SVG.has(name)) return
 
+        const local = name === 'use' || SVG_PAINT_SERVERS.has(name)
         const href =
-            name === 'use' || name === 'image'
+            local || name === 'image'
                 ? (source.getAttribute('href') ??
                   source.getAttributeNS(XLINK_NS, 'href') ??
                   source.getAttribute('xlink:href'))
                 : null
-        // `use` can load a different document. Only a reference into this document is safe.
-        const localReference = name === 'use' && href !== null ? href.trim() : ''
-        if (name === 'use' && localReference.charCodeAt(0) !== 35) return
+        // These elements can load a different document. Only a reference into this document
+        // is safe.
+        const reference = local && href !== null ? href.trim() : ''
+        const isLocal = reference.charCodeAt(0) === 35
+        if (name === 'use' && !isLocal) return
 
         const element = document.createElementNS(SVG_NS, name)
         copyAttributes(source, element)
-        if (name === 'use') element.setAttribute('href', localReference)
-        else if (name === 'image') this.setImageSource(href, element)
+        if (local) {
+            if (isLocal) element.setAttribute('href', reference)
+        } else if (name === 'image') {
+            this.setImageSource(href, element)
+        }
         target.appendChild(element)
         this.copyChildren(source, element)
     }
@@ -419,9 +504,15 @@ class TreeBuilder {
     }
 
     private setImageSource(href: string | null, target: Element): void {
-        const file = this.resolveFile(href)
-        if (!file) return
-        target.setAttribute(IMAGE_PATH_ATTR, file)
+        if (href === null) return
+        const data = dataImageUrl(href)
+        if (data) {
+            target.setAttribute(target.localName === 'img' ? 'src' : 'href', data)
+        } else {
+            const file = this.resolveFile(href)
+            if (!file) return
+            target.setAttribute(IMAGE_PATH_ATTR, file)
+        }
         this.images.push(target)
     }
 
@@ -497,10 +588,12 @@ export function sanitizeDocument({ xhtml, path, book }: SanitizeOptions): Saniti
         builder.copyElement(sourceRoot, body)
     }
 
+    const bodyLanguage = documentLanguage(body)
+    const rootLanguage = documentLanguage(root)
     return {
         root,
         body,
-        lang: body.getAttribute('lang') || root.getAttribute('lang') || null,
+        lang: bodyLanguage ?? rootLanguage,
         dir: readDirection(body) ?? readDirection(root),
         styleSources: builder.styleSources,
         images: builder.images,

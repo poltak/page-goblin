@@ -7,9 +7,11 @@ import {
     registerFontFaces,
     resolveCssText,
     resolveCssUrls,
+    SCALE_PROPERTY,
     unregisterFontFaces,
     type FontFaceSpec,
 } from './css'
+import { normalizeLanguage } from './language'
 import { createResourceStore } from './resources'
 import { IMAGE_PATH_ATTR, PENDING_STYLE_ATTR, sanitizeDocument, type StyleSource } from './sanitize'
 import { buildTextModel, measureChapter } from './text-model'
@@ -41,7 +43,7 @@ interface InlineStyleOptions {
 const TEXT_CACHE_SIZE = 3
 const STYLE_URL_HINT = /url\(|\\|image-set|src\(/i
 // Most style attributes have nothing that `fixDeclarations` changes.
-const STYLE_FIX_HINT = /break|fixed/i
+const STYLE_FIX_HINT = /break|fixed|font|line-height/i
 
 function waitForImages(images: readonly Element[], timeoutMs: number): Promise<void> {
     const pending = images.filter(
@@ -81,6 +83,17 @@ function applyStyle(element: Element, css: string): void {
     style.cssText = css
     const strict = needsStrictCheck(css)
     if (strict || STYLE_FIX_HINT.test(css)) fixDeclarations(style, strict)
+}
+
+/**
+ * The text of an SVG drawing has its sizes in the units of the drawing. If such a size
+ * followed the font size setting, the text would not fit the drawing. A scale of 1 on the
+ * drawing gives each scaled size below it the value of the book.
+ */
+function resetSvgScale(body: Element): void {
+    for (const svg of body.querySelectorAll<SVGElement>('svg')) {
+        svg.style?.setProperty(SCALE_PROPERTY, '1')
+    }
 }
 
 export function createContentLoader({
@@ -212,17 +225,19 @@ export function createContentLoader({
     async function buildChapter(spineIndex: number, entry: ChapterEntry): Promise<ChapterContent> {
         const item = book.spine[spineIndex]
         const xhtml = await book.readText(item.path)
-        const { root, body, lang, dir, styleSources, images } = sanitizeDocument({
-            xhtml,
-            path: item.path,
-            book,
-        })
+        const sanitized = sanitizeDocument({ xhtml, path: item.path, book })
+        const { root, body, dir, styleSources, images } = sanitized
+        const lang = sanitized.lang ?? normalizeLanguage(book.metadata.language)
+        // Hyphenation and speech read the language from the DOM.
+        if (lang) root.setAttribute('lang', lang)
         const { length, anchors } = measureChapter(body)
         const [styles] = await Promise.all([
             loadStyles(styleSources, item.path),
             attachImages(images, entry),
             applyInlineStyles({ root, path: item.path, entry }),
         ])
+        // After the style attributes, because each of them replaces the full inline style.
+        resetSvgScale(body)
 
         return {
             spineIndex,
