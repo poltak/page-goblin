@@ -1,0 +1,84 @@
+/*
+ * The contents panel. Class selectors only, because this file is not in a cascade layer and
+ * wins over each component rule.
+ */
+
+.contents-pane > .empty-state {
+    padding-block: var(--space-10);
+}
+
+/* The row of the Export button above the highlights. */
+.contents-actions {
+    display: flex;
+    justify-content: flex-end;
+    padding: var(--space-2) var(--space-4) var(--space-1);
+}
+
+/* The dot is in line with the first line of the text, not in the middle of a tall row. */
+.contents-highlight {
+    align-items: flex-start;
+}
+
+.contents-dot {
+    flex: none;
+    width: var(--space-3);
+    height: var(--space-3);
+    margin-top: var(--space-1);
+    border-radius: var(--radius-full);
+    background: var(--hl-yellow);
+    /* The yellow dot has a low contrast on the light themes. */
+    box-shadow: inset 0 0 0 1px var(--border-strong);
+
+    &[data-color='green'] {
+        background: var(--hl-green);
+    }
+
+    &[data-color='blue'] {
+        background: var(--hl-blue);
+    }
+
+    &[data-color='pink'] {
+        background: var(--hl-pink);
+    }
+
+    &[data-color='purple'] {
+        background: var(--hl-purple);
+    }
+}
+
+.contents-highlight-text {
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+}
+
+.contents-note {
+    font-style: italic;
+}
+
+.contents-chapter {
+    -webkit-line-clamp: 1;
+    line-clamp: 1;
+    color: var(--fg-faint);
+    font-size: var(--text-xs);
+}
+
+.contents-swatches {
+    display: flex;
+    justify-content: space-between;
+    padding-inline: var(--space-1);
+}
+
+.contents-note-field {
+    margin-top: var(--space-4);
+}
+
+/*
+ * The keyboard of a phone or a tablet covers the lower part of the screen. A dialog in the
+ * middle of the screen then has its Save button below the keyboard. The dialog is near the
+ * top on such a device. Its bottom margin stays automatic.
+ */
+@media (pointer: coarse) {
+    .contents-note-dialog {
+        margin-top: max(var(--space-6), calc(var(--safe-top) + var(--space-4)));
+    }
+}

@@ -1,0 +1,139 @@
+/*
+ * The reading settings panel. Class selectors only, because this file is not in a cascade
+ * layer and wins over each component rule.
+ */
+
+/*
+ * The reader must see the page change with each setting. Thus the page gets no scrim, and on
+ * a phone the sheet covers only the lower part of the page.
+ */
+.appearance-panel {
+    max-height: 55dvh;
+
+    &::backdrop {
+        background: transparent;
+    }
+
+    @media (min-width: 720px) {
+        max-height: none;
+    }
+}
+
+.appearance-themes {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: var(--space-1);
+}
+
+.appearance-theme {
+    position: relative;
+    display: grid;
+    justify-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) 0;
+    border-radius: var(--radius-md);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    font-weight: var(--weight-medium);
+    line-height: var(--leading-tight);
+    cursor: pointer;
+    -webkit-user-select: none;
+    user-select: none;
+
+    /* The radio input covers the swatch and is not visible. It keeps the keyboard behaviour. */
+    & > input {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        opacity: 0;
+        cursor: inherit;
+    }
+
+    @media (hover: hover) {
+        &:hover {
+            color: var(--fg);
+        }
+    }
+
+    /*
+     * The ring of the selected swatch. It is on the label and not on the swatch, because the
+     * swatch has the colour tokens of its own theme and the ring must have those of the app.
+     */
+    &::before {
+        content: '';
+        position: absolute;
+        top: var(--space-1);
+        left: 50%;
+        width: calc(var(--space-12) + var(--space-2));
+        height: calc(var(--space-12) + var(--space-2));
+        margin-left: calc((var(--space-12) + var(--space-2)) / -2);
+        border-radius: var(--radius-full);
+        box-shadow: inset 0 0 0 2px var(--accent);
+        opacity: 0;
+        transition: opacity var(--dur-fast) var(--ease-out);
+    }
+
+    &:has(:checked) {
+        color: var(--fg);
+        font-weight: var(--weight-semibold);
+
+        &::before {
+            opacity: 1;
+        }
+    }
+
+    &:has(:focus-visible) {
+        outline: 2px solid var(--focus-ring);
+        outline-offset: 2px;
+    }
+}
+
+/*
+ * A circle in the page colour of its theme. The element has data-theme, so the colour tokens
+ * here are those of that theme and not of the theme of the app. The edge is a border and not
+ * an inset shadow, because the two halves of the Auto swatch would cover a shadow.
+ */
+.appearance-chip {
+    display: grid;
+    place-items: center;
+    width: var(--space-12);
+    height: var(--space-12);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-full);
+    background: var(--bg);
+    color: var(--fg);
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: var(--text-lg);
+    font-weight: var(--weight-regular);
+    overflow: hidden;
+    transition: transform var(--dur-fast) var(--ease-out);
+
+    .appearance-theme:active > & {
+        transform: scale(0.94);
+    }
+}
+
+/* The Auto swatch: one half in the light theme and one half in the dark theme of the setting. */
+.appearance-chip-auto {
+    grid-template-columns: 1fr 1fr;
+    place-items: stretch;
+    /* The letters of the two halves stand together as one "Aa". */
+    column-gap: 0;
+
+    & > span {
+        display: grid;
+        align-items: center;
+        background: var(--bg);
+        color: var(--fg);
+    }
+
+    & > :first-child {
+        justify-items: end;
+    }
+
+    & > :last-child {
+        justify-items: start;
+    }
+}

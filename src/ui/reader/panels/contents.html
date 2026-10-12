@@ -1,0 +1,248 @@
+<dialog
+    class="sheet panel-sheet panel-sheet-tall contents-panel"
+    aria-labelledby="contents-title"
+    closedby="any"
+>
+    <header class="sheet-header">
+        <h2 class="sheet-title" id="contents-title"></h2>
+        <button class="icon-btn" type="button" aria-label="Close" data-close>
+            <svg class="icon icon-lg" aria-hidden="true"><use href="#i-x" /></svg>
+        </button>
+    </header>
+    <div class="tabs tabs-fill" role="tablist" aria-label="Book navigation">
+        <button
+            type="button"
+            role="tab"
+            id="contents-tab-contents"
+            aria-controls="contents-pane-contents"
+            data-tab="contents"
+        >
+            Contents
+        </button>
+        <button
+            type="button"
+            role="tab"
+            id="contents-tab-bookmarks"
+            aria-controls="contents-pane-bookmarks"
+            data-tab="bookmarks"
+        >
+            Bookmarks
+        </button>
+        <button
+            type="button"
+            role="tab"
+            id="contents-tab-highlights"
+            aria-controls="contents-pane-highlights"
+            data-tab="highlights"
+        >
+            Highlights
+        </button>
+    </div>
+    <div class="sheet-body panel-body-flush">
+        <div
+            class="contents-pane"
+            role="tabpanel"
+            id="contents-pane-contents"
+            aria-labelledby="contents-tab-contents"
+            data-pane="contents"
+        >
+            <ol class="list"></ol>
+            <div class="empty-state" hidden>
+                <svg class="icon" aria-hidden="true"><use href="#i-list" /></svg>
+                <p class="empty-state-title">No contents list</p>
+                <p class="empty-state-text">This book has no table of contents.</p>
+            </div>
+        </div>
+        <div
+            class="contents-pane"
+            role="tabpanel"
+            id="contents-pane-bookmarks"
+            aria-labelledby="contents-tab-bookmarks"
+            data-pane="bookmarks"
+            hidden
+        >
+            <ul class="list list-divided list-long"></ul>
+            <div class="empty-state" hidden>
+                <svg class="icon" aria-hidden="true"><use href="#i-bookmark" /></svg>
+                <p class="empty-state-title">No bookmarks yet</p>
+                <p class="empty-state-text">
+                    Use the bookmark button in the top bar to mark a page.
+                </p>
+            </div>
+        </div>
+        <div
+            class="contents-pane"
+            role="tabpanel"
+            id="contents-pane-highlights"
+            aria-labelledby="contents-tab-highlights"
+            data-pane="highlights"
+            hidden
+        >
+            <div class="contents-actions">
+                <button
+                    class="btn btn-sm"
+                    type="button"
+                    popovertarget="contents-export-menu"
+                    aria-haspopup="menu"
+                    aria-expanded="false"
+                    data-action="export"
+                >
+                    <svg class="icon icon-sm" aria-hidden="true"><use href="#i-download" /></svg>
+                    <span>Export</span>
+                </button>
+            </div>
+            <ul class="list list-divided list-long"></ul>
+            <div class="empty-state" hidden>
+                <svg class="icon" aria-hidden="true"><use href="#i-highlighter" /></svg>
+                <p class="empty-state-title">No highlights yet</p>
+                <p class="empty-state-text">Select text in the book to add one.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- The menus are in the sheet, because the page outside a modal dialog takes no input. -->
+    <div class="menu" id="contents-export-menu" popover role="menu" aria-label="Export highlights">
+        <button class="menu-item" type="button" role="menuitem" data-export="markdown">
+            <svg class="icon" aria-hidden="true"><use href="#i-download" /></svg>
+            Markdown file
+        </button>
+        <button class="menu-item" type="button" role="menuitem" data-export="kindle">
+            <svg class="icon" aria-hidden="true"><use href="#i-download" /></svg>
+            Kindle clippings file
+        </button>
+        <button class="menu-item" type="button" role="menuitem" data-export="copy">
+            <svg class="icon" aria-hidden="true"><use href="#i-copy" /></svg>
+            Copy as Markdown
+        </button>
+    </div>
+    <div
+        class="menu"
+        id="contents-highlight-menu"
+        popover
+        role="menu"
+        aria-label="Highlight actions"
+    >
+        <button class="menu-item" type="button" role="menuitem" data-action="note">
+            <svg class="icon" aria-hidden="true"><use href="#i-note" /></svg>
+            <span class="contents-note-action">Edit note</span>
+        </button>
+        <div class="menu-label" id="contents-colour-label">Change colour</div>
+        <div class="contents-swatches" role="group" aria-labelledby="contents-colour-label">
+            <button
+                class="swatch swatch-yellow"
+                type="button"
+                role="menuitemradio"
+                aria-checked="false"
+                aria-label="Yellow"
+                data-color="yellow"
+            ></button>
+            <button
+                class="swatch swatch-green"
+                type="button"
+                role="menuitemradio"
+                aria-checked="false"
+                aria-label="Green"
+                data-color="green"
+            ></button>
+            <button
+                class="swatch swatch-blue"
+                type="button"
+                role="menuitemradio"
+                aria-checked="false"
+                aria-label="Blue"
+                data-color="blue"
+            ></button>
+            <button
+                class="swatch swatch-pink"
+                type="button"
+                role="menuitemradio"
+                aria-checked="false"
+                aria-label="Pink"
+                data-color="pink"
+            ></button>
+            <button
+                class="swatch swatch-purple"
+                type="button"
+                role="menuitemradio"
+                aria-checked="false"
+                aria-label="Purple"
+                data-color="purple"
+            ></button>
+        </div>
+        <hr class="menu-separator" />
+        <button
+            class="menu-item menu-item-danger"
+            type="button"
+            role="menuitem"
+            data-action="remove"
+        >
+            <svg class="icon" aria-hidden="true"><use href="#i-trash" /></svg>
+            Remove
+        </button>
+    </div>
+</dialog>
+
+<!-- A press outside this dialog does not close it, so a typed note is not lost by accident. -->
+<dialog
+    class="modal panel-modal contents-note-dialog"
+    aria-labelledby="contents-note-title"
+    closedby="closerequest"
+>
+    <h2 class="modal-title" id="contents-note-title">Edit note</h2>
+    <div class="field contents-note-field">
+        <textarea class="input" rows="5" aria-labelledby="contents-note-title" autofocus></textarea>
+        <p class="field-error" role="alert" hidden></p>
+    </div>
+    <div class="modal-actions">
+        <button class="btn btn-quiet" type="button" data-action="cancel-note">Cancel</button>
+        <button class="btn btn-primary" type="button" data-action="save-note">Save</button>
+    </div>
+</dialog>
+
+<template data-row="toc">
+    <li>
+        <button class="list-row" type="button">
+            <span class="list-row-body"><span class="list-row-title"></span></span>
+            <span class="list-row-trail"></span>
+        </button>
+    </li>
+</template>
+
+<template data-row="bookmark">
+    <li class="panel-item">
+        <button class="list-row" type="button" data-go>
+            <span class="list-row-body">
+                <span class="list-row-title"></span>
+                <span class="list-row-meta"></span>
+            </span>
+            <span class="list-row-trail"></span>
+        </button>
+        <button class="icon-btn" type="button" aria-label="Remove bookmark" data-remove>
+            <svg class="icon" aria-hidden="true"><use href="#i-trash" /></svg>
+        </button>
+    </li>
+</template>
+
+<template data-row="highlight">
+    <li class="panel-item">
+        <button class="list-row contents-highlight" type="button" data-go>
+            <span class="contents-dot" role="img"></span>
+            <span class="list-row-body">
+                <span class="list-row-title contents-highlight-text"></span>
+                <span class="list-row-meta contents-note"></span>
+                <span class="list-row-meta contents-chapter"></span>
+            </span>
+        </button>
+        <button
+            class="icon-btn"
+            type="button"
+            aria-label="Highlight actions"
+            aria-haspopup="menu"
+            aria-expanded="false"
+            popovertarget="contents-highlight-menu"
+            data-menu
+        >
+            <svg class="icon" aria-hidden="true"><use href="#i-more" /></svg>
+        </button>
+    </li>
+</template>

@@ -1,0 +1,65 @@
+/*
+ * Rules that the panels of the reader screen share. Class selectors only, because this file is
+ * not in a cascade layer and wins over each component rule.
+ */
+
+/*
+ * The overlay layer of the reader screen takes no pointer events, and its children inherit
+ * that. An open panel must take them. A panel that closes has no [open] and takes none.
+ */
+.panel-sheet[open],
+.panel-modal[open] {
+    pointer-events: auto;
+}
+
+/*
+ * A bottom sheet has the height of its content. The content of these panels changes (a tab, a
+ * result list), so they get a fixed height and do not jump.
+ */
+.panel-sheet-tall {
+    height: 85dvh;
+
+    @media (min-width: 720px) {
+        height: 100dvh;
+    }
+}
+
+/* A sheet body that holds a list. The rows go from edge to edge. */
+.panel-body-flush {
+    padding-inline: 0;
+    padding-top: 0;
+}
+
+/* A list row with a button at its side. A button cannot be inside the button of the row. */
+.panel-item {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+
+    & > .list-row {
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+
+    & > .icon-btn {
+        margin-inline-end: var(--space-1);
+
+        /* A long list does not paint outside the box of a row, so the ring is inside. */
+        &:focus-visible {
+            outline-offset: -2px;
+        }
+    }
+}
+
+/* The place of a message in an open sheet. It has the look of a toast of the app. */
+.panel-notice {
+    position: absolute;
+    inset: auto 0 0;
+    z-index: var(--z-raised);
+    display: flex;
+    justify-content: center;
+    padding: 0 max(var(--space-4), var(--safe-right)) calc(var(--safe-bottom) + var(--space-4))
+        max(var(--space-4), var(--safe-left));
+    /* The place is as wide as the sheet, so it must let taps through. */
+    pointer-events: none;
+}

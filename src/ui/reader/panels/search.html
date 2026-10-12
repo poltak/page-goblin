@@ -1,0 +1,55 @@
+<dialog
+    class="sheet panel-sheet panel-sheet-tall search-panel"
+    aria-label="Search in this book"
+    closedby="any"
+    tabindex="-1"
+>
+    <header class="sheet-header search-header">
+        <label class="input-icon search-field">
+            <svg class="icon" aria-hidden="true"><use href="#i-search" /></svg>
+            <input
+                class="input"
+                type="search"
+                aria-label="Search in this book"
+                placeholder="Search in this book"
+                autocomplete="off"
+                autocapitalize="off"
+                spellcheck="false"
+                enterkeyhint="search"
+                autofocus
+            />
+        </label>
+        <button class="btn btn-quiet btn-sm" type="button" data-action="clear">Clear</button>
+        <button class="icon-btn" type="button" aria-label="Close" data-close>
+            <svg class="icon icon-lg" aria-hidden="true"><use href="#i-x" /></svg>
+        </button>
+    </header>
+    <div class="search-status">
+        <p class="search-status-text"></p>
+        <div
+            class="progress progress-thin"
+            role="progressbar"
+            aria-label="Search progress"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            hidden
+        ></div>
+        <!-- A screen reader gets the result of a search here, and not each step of it. -->
+        <p class="visually-hidden" role="status"></p>
+    </div>
+    <div class="sheet-body panel-body-flush">
+        <ul class="list list-divided list-long" aria-label="Search results"></ul>
+    </div>
+</dialog>
+
+<template data-row="result">
+    <li>
+        <button class="list-row" type="button" tabindex="-1">
+            <span class="list-row-body">
+                <span class="list-row-title"></span>
+                <span class="list-row-meta"></span>
+            </span>
+            <span class="list-row-trail"></span>
+        </button>
+    </li>
+</template>

@@ -1,0 +1,51 @@
+/*
+ * The search panel. Class selectors only, because this file is not in a cascade layer and
+ * wins over each component rule.
+ */
+
+.search-header {
+    gap: var(--space-1);
+    padding-inline-start: var(--space-3);
+}
+
+.search-field {
+    flex: 1 1 auto;
+    min-width: 0;
+
+    /* The Clear button of the panel also removes the marks in the book. One clear control. */
+    & > .input::-webkit-search-cancel-button {
+        -webkit-appearance: none;
+        appearance: none;
+    }
+}
+
+.search-status {
+    position: relative;
+    flex: none;
+    padding: var(--space-2) var(--space-4);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    line-height: var(--leading-snug);
+
+    /*
+     * The bar is a line on the lower edge and takes no room. The list thus stays in its place
+     * when a search starts and when it ends.
+     */
+    & > .progress {
+        position: absolute;
+        inset: auto 0 0;
+        border-radius: 0;
+    }
+}
+
+/* The line keeps its height when it is empty, so the list does not move. */
+.search-status-text {
+    min-height: calc(var(--text-sm) * var(--leading-snug));
+}
+
+.search-match {
+    border-radius: var(--radius-sm);
+    background: var(--accent-soft);
+    color: var(--accent-text);
+    font-weight: var(--weight-semibold);
+}

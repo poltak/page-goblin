@@ -1,0 +1,173 @@
+<dialog
+    class="sheet panel-sheet appearance-panel"
+    aria-labelledby="appearance-title"
+    closedby="any"
+>
+    <header class="sheet-header">
+        <h2 class="sheet-title" id="appearance-title">Reading settings</h2>
+        <button class="icon-btn" type="button" aria-label="Close" data-close>
+            <svg class="icon icon-lg" aria-hidden="true"><use href="#i-x" /></svg>
+        </button>
+    </header>
+    <div class="sheet-body stack">
+        <div class="field">
+            <span class="field-label" id="appearance-theme-label">Theme</span>
+            <div
+                class="appearance-themes"
+                role="radiogroup"
+                aria-labelledby="appearance-theme-label"
+            >
+                <label class="appearance-theme">
+                    <input type="radio" name="appearance-theme" value="auto" />
+                    <span class="appearance-chip appearance-chip-auto" aria-hidden="true">
+                        <span data-theme="light">A</span><span data-theme="dark">a</span>
+                    </span>
+                    <span class="appearance-theme-name">Auto</span>
+                </label>
+                <label class="appearance-theme">
+                    <input type="radio" name="appearance-theme" value="light" />
+                    <span class="appearance-chip" data-theme="light" aria-hidden="true">Aa</span>
+                    <span class="appearance-theme-name">Light</span>
+                </label>
+                <label class="appearance-theme">
+                    <input type="radio" name="appearance-theme" value="sepia" />
+                    <span class="appearance-chip" data-theme="sepia" aria-hidden="true">Aa</span>
+                    <span class="appearance-theme-name">Sepia</span>
+                </label>
+                <label class="appearance-theme">
+                    <input type="radio" name="appearance-theme" value="dark" />
+                    <span class="appearance-chip" data-theme="dark" aria-hidden="true">Aa</span>
+                    <span class="appearance-theme-name">Dark</span>
+                </label>
+                <label class="appearance-theme">
+                    <input type="radio" name="appearance-theme" value="black" />
+                    <span class="appearance-chip" data-theme="black" aria-hidden="true">Aa</span>
+                    <span class="appearance-theme-name">Black</span>
+                </label>
+            </div>
+        </div>
+        <div class="field" data-row="darkTheme">
+            <span class="field-label" id="appearance-dark-label">Dark theme</span>
+            <div class="segmented" role="radiogroup" aria-labelledby="appearance-dark-label">
+                <label><input type="radio" name="appearance-darkTheme" value="dark" />Dark</label>
+                <label><input type="radio" name="appearance-darkTheme" value="black" />Black</label>
+            </div>
+        </div>
+
+        <div class="field">
+            <label class="field-label" for="appearance-font">Font</label>
+            <select class="select" id="appearance-font"></select>
+        </div>
+
+        <div class="field">
+            <div class="field field-inline">
+                <span class="field-label" id="appearance-size-label">Size</span>
+                <div class="stepper" role="group" aria-labelledby="appearance-size-label">
+                    <button class="stepper-btn" type="button" aria-label="Smaller" data-step="-1">
+                        <svg class="icon" aria-hidden="true"><use href="#i-minus" /></svg>
+                    </button>
+                    <output class="stepper-value" data-output="fontSize"></output>
+                    <button class="stepper-btn" type="button" aria-label="Larger" data-step="1">
+                        <svg class="icon" aria-hidden="true"><use href="#i-plus" /></svg>
+                    </button>
+                </div>
+            </div>
+            <input
+                class="slider"
+                type="range"
+                aria-labelledby="appearance-size-label"
+                data-slider="fontSize"
+            />
+        </div>
+
+        <div class="field">
+            <label class="field field-inline">
+                <span class="field-label">Publisher line height</span>
+                <input class="switch" type="checkbox" role="switch" data-switch="lineHeight" />
+            </label>
+            <label class="slider-row">
+                <span class="slider-label">Line height</span>
+                <input class="slider" type="range" data-slider="lineHeight" />
+                <output class="slider-value" data-output="lineHeight"></output>
+            </label>
+        </div>
+
+        <div class="field">
+            <span class="field-label" id="appearance-margin-label">Margins</span>
+            <div class="segmented" role="radiogroup" aria-labelledby="appearance-margin-label">
+                <label><input type="radio" name="appearance-margin" value="narrow" />Narrow</label>
+                <label><input type="radio" name="appearance-margin" value="normal" />Normal</label>
+                <label><input type="radio" name="appearance-margin" value="wide" />Wide</label>
+            </div>
+        </div>
+
+        <div class="field">
+            <span class="field-label" id="appearance-align-label">Alignment</span>
+            <div class="segmented" role="radiogroup" aria-labelledby="appearance-align-label">
+                <label>
+                    <input type="radio" name="appearance-textAlign" value="publisher" />Publisher
+                </label>
+                <label><input type="radio" name="appearance-textAlign" value="start" />Left</label>
+                <label>
+                    <input type="radio" name="appearance-textAlign" value="justify" />Justified
+                </label>
+            </div>
+            <label class="field field-inline">
+                <span class="field-label">Hyphenation</span>
+                <input class="switch" type="checkbox" role="switch" data-switch="hyphenate" />
+            </label>
+        </div>
+
+        <div class="field">
+            <span class="field-label" id="appearance-layout-label">Layout</span>
+            <div class="segmented" role="radiogroup" aria-labelledby="appearance-layout-label">
+                <label>
+                    <input type="radio" name="appearance-layout" value="paged" />
+                    <svg class="icon" aria-hidden="true"><use href="#i-page" /></svg>
+                    Pages
+                </label>
+                <label>
+                    <input type="radio" name="appearance-layout" value="scroll" />
+                    <svg class="icon" aria-hidden="true"><use href="#i-scroll" /></svg>
+                    Scroll
+                </label>
+            </div>
+        </div>
+        <div class="field" data-row="columns">
+            <span class="field-label" id="appearance-columns-label">Columns</span>
+            <div class="segmented" role="radiogroup" aria-labelledby="appearance-columns-label">
+                <label><input type="radio" name="appearance-columns" value="auto" />Auto</label>
+                <label><input type="radio" name="appearance-columns" value="1" />1</label>
+                <label><input type="radio" name="appearance-columns" value="2" />2</label>
+            </div>
+        </div>
+        <div class="field" data-row="pageTurn">
+            <span class="field-label" id="appearance-turn-label">Page turn</span>
+            <div class="segmented" role="radiogroup" aria-labelledby="appearance-turn-label">
+                <label><input type="radio" name="appearance-pageTurn" value="slide" />Slide</label>
+                <label><input type="radio" name="appearance-pageTurn" value="fade" />Fade</label>
+                <label><input type="radio" name="appearance-pageTurn" value="none" />None</label>
+            </div>
+        </div>
+
+        <div class="field">
+            <label class="field field-inline">
+                <span class="field-label">Publisher styles</span>
+                <span class="field-help">
+                    Turn off to ignore the fonts, colours and spacing of the book.
+                </span>
+                <input class="switch" type="checkbox" role="switch" data-switch="publisherStyles" />
+            </label>
+            <label class="field field-inline">
+                <span class="field-label">Keep screen awake</span>
+                <span class="field-help">In the speed reader and while listening.</span>
+                <input class="switch" type="checkbox" role="switch" data-switch="keepAwake" />
+            </label>
+        </div>
+
+        <button class="btn btn-quiet btn-block" type="button" data-action="reset">
+            <svg class="icon" aria-hidden="true"><use href="#i-rotate-ccw" /></svg>
+            <span>Reset reading settings</span>
+        </button>
+    </div>
+</dialog>
