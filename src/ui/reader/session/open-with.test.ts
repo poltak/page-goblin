@@ -10,7 +10,7 @@ import type { OwnedSettingsStore } from '$lib/settings'
 import { createLibraryStorage } from '$lib/storage'
 import type { LibraryStorage } from '$lib/storage/types'
 import type { ReaderSession } from '../types'
-import { openSessionWith } from './open-with'
+import { FONT_WAIT_MS, openSessionWith } from './open-with'
 import type { SessionParts } from './open-with'
 import {
     BOOK_ID,
@@ -24,6 +24,13 @@ import {
 } from './testing/fixtures'
 import type { FakeViews } from './testing/fixtures'
 
+// The session also starts the load of the font. These tests look only at the loader of the
+// open, which is an input.
+vi.mock('$lib/fonts', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('$lib/fonts')>()),
+    ensureFontLoaded: vi.fn(() => Promise.resolve()),
+}))
+
 const OPEN_TIME = 1_700_000_123_456
 
 let storage: LibraryStorage
@@ -33,6 +40,8 @@ let container: HTMLElement
 let book: EpubBook
 /** The content loaders that the opens made, each with spies on prepare and dispose. */
 let loaders: ContentLoader[]
+/** The embedded font families that the content loaders report. Null gives those of the book. */
+let bookFonts: string[] | null
 let order: string[]
 const sessions: ReaderSession[] = []
 
@@ -61,7 +70,7 @@ function makeParts(changes: Partial<SessionParts> = {}): SessionParts {
                     order.push('prepared')
                 }),
                 get bookFonts() {
-                    return loader.bookFonts
+                    return bookFonts ?? loader.bookFonts
                 },
                 load: loader.load,
                 loadText: loader.loadText,
@@ -69,6 +78,9 @@ function makeParts(changes: Partial<SessionParts> = {}): SessionParts {
             }
             loaders.push(spied)
             return spied
+        }),
+        loadFont: vi.fn(async () => {
+            order.push('font')
         }),
         settings,
         createView: vi.fn((mode, options) => {
@@ -100,6 +112,7 @@ beforeEach(() => {
     container = document.createElement('div')
     book = makeBook()
     loaders = []
+    bookFonts = null
     order = []
 })
 
@@ -107,6 +120,7 @@ afterEach(async () => {
     for (const session of sessions.splice(0)) await session.destroy()
     settings.destroy()
     storage.close()
+    vi.useRealTimers()
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
 })
@@ -398,6 +412,181 @@ describe('openSessionWith', () => {
             await settle()
             expect(views.current.isDestroyed).toBe(false)
         })
+    })
+
+    describe('the font of the settings', () => {
+        /** The time limit runs on a fake clock. The storage of the tests needs setImmediate. */
+        function useFakeTimeouts(): void {
+            vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+        }
+
+        /** A font loader that the test completes by hand. */
+        function manualFont(): { loadFont: SessionParts['loadFont']; arrive(): void } {
+            let arrive = (): void => {}
+            const ready = new Promise<void>((resolve) => (arrive = resolve))
+            return { loadFont: vi.fn(() => ready), arrive: () => arrive() }
+        }
+
+        it('starts the load of a bundled font before the book file opens', async () => {
+            await addBook()
+            useFakeTimeouts()
+            settings.update({ fontId: 'literata' })
+            const parts = makeParts({
+                openEpub: vi.fn(async () => {
+                    order.push('open')
+                    return book
+                }),
+            })
+
+            // The font is ready at once. The clock does not move, so the open did not wait
+            // for the time limit.
+            await openBook(parts)
+            expect(parts.loadFont).toHaveBeenCalledTimes(1)
+            expect(parts.loadFont).toHaveBeenCalledWith('literata')
+            expect(order).toEqual(['font', 'open', 'prepared', 'view'])
+            expect(vi.getTimerCount()).toBe(0)
+        })
+
+        it('makes the view only after a bundled font is ready', async () => {
+            await addBook()
+            useFakeTimeouts()
+            settings.update({ fontId: 'literata' })
+            const font = manualFont()
+            const opened = openBook(makeParts({ loadFont: font.loadFont }))
+            await settle()
+            // The book is ready and the font is not.
+            expect(order).toEqual(['prepared'])
+
+            font.arrive()
+            const session = await opened
+            expect(order).toEqual(['prepared', 'view'])
+            expect(session.view).toBe(views.current)
+            expect(views.current.options.appearance.fontFamily).toContain('Literata Variable')
+            expect(vi.getTimerCount()).toBe(0)
+        })
+
+        it('shows the book after 500 ms when a bundled font is not ready', async () => {
+            await addBook()
+            useFakeTimeouts()
+            settings.update({ fontId: 'literata' })
+            // The font file is on a slow network.
+            const parts = makeParts({ loadFont: vi.fn(() => new Promise<void>(() => {})) })
+            let done = false
+            const opened = openBook(parts).then((session) => {
+                done = true
+                return session
+            })
+            await settle()
+            expect(order).toEqual(['prepared'])
+
+            vi.advanceTimersByTime(FONT_WAIT_MS - 1)
+            await settle()
+            expect(order).toEqual(['prepared'])
+            expect(done).toBe(false)
+
+            vi.advanceTimersByTime(1)
+            const session = await opened
+            expect(FONT_WAIT_MS).toBe(500)
+            expect(order).toEqual(['prepared', 'view'])
+            expect(session.view).toBe(views.current)
+        })
+
+        it.each([
+            ['rejects', () => Promise.reject(new Error('offline'))],
+            [
+                'throws',
+                () => {
+                    throw new Error('no loader')
+                },
+            ],
+        ])('opens the book at once when the font loader %s', async (_name, loadFont) => {
+            await addBook()
+            useFakeTimeouts()
+            settings.update({ fontId: 'inter' })
+            const session = await openBook(makeParts({ loadFont: vi.fn(loadFont) }))
+            expect(session.view).toBe(views.current)
+            expect(vi.getTimerCount()).toBe(0)
+        })
+
+        it.each(['publisher', 'georgia', 'system-serif', 'book:Not In This Book'])(
+            'does not wait for a font with the font id "%s"',
+            async (fontId) => {
+                await addBook()
+                useFakeTimeouts()
+                settings.update({ fontId })
+                let timersAtView = -1
+                const parts = makeParts({
+                    createView: vi.fn((mode, options) => {
+                        timersAtView = vi.getTimerCount()
+                        return views.createView(mode, options)
+                    }),
+                })
+
+                const session = await openBook(parts)
+                expect(session.view).toBe(views.current)
+                expect(parts.loadFont).not.toHaveBeenCalled()
+                // The open made no time limit.
+                expect(timersAtView).toBe(0)
+            },
+        )
+
+        it('waits for a font of the book after the loader has its font faces', async () => {
+            await addBook()
+            useFakeTimeouts()
+            bookFonts = ['Minion']
+            settings.update({ fontId: 'book:Minion' })
+            const parts = makeParts()
+            await openBook(parts)
+            expect(parts.loadFont).toHaveBeenCalledTimes(1)
+            expect(parts.loadFont).toHaveBeenCalledWith('book:Minion')
+            expect(order).toEqual(['prepared', 'font', 'view'])
+            expect(views.current.options.appearance.fontFamily).toBe('"Minion", serif')
+        })
+
+        it('shows the book after 500 ms when a font of the book is not ready', async () => {
+            await addBook()
+            useFakeTimeouts()
+            bookFonts = ['Minion']
+            settings.update({ fontId: 'book:Minion' })
+            const parts = makeParts({ loadFont: vi.fn(() => new Promise<void>(() => {})) })
+            const opened = openBook(parts)
+            await settle()
+            // The wait started, and its time limit is on the clock.
+            expect(parts.loadFont).toHaveBeenCalledTimes(1)
+            expect(order).toEqual(['prepared'])
+
+            vi.advanceTimersByTime(FONT_WAIT_MS - 1)
+            await settle()
+            expect(order).toEqual(['prepared'])
+
+            vi.advanceTimersByTime(1)
+            await opened
+            expect(order).toEqual(['prepared', 'view'])
+        })
+
+        it.each(['literata', 'book:Minion'])(
+            'makes no view when the signal aborts during the wait for the font "%s"',
+            async (fontId) => {
+                await addBook()
+                useFakeTimeouts()
+                bookFonts = ['Minion']
+                settings.update({ fontId })
+                const font = manualFont()
+                const parts = makeParts({ loadFont: font.loadFont })
+                const stop = new AbortController()
+                const result = expect(openBook(parts, stop.signal)).rejects.toMatchObject({
+                    name: 'AbortError',
+                })
+                await settle()
+                expect(order).toEqual(['prepared'])
+
+                stop.abort()
+                font.arrive()
+                await result
+                expect(parts.createView).not.toHaveBeenCalled()
+                expect(loaders[0].dispose).toHaveBeenCalledTimes(1)
+            },
+        )
     })
 
     it('rejects with the error of the EPUB parser', async () => {

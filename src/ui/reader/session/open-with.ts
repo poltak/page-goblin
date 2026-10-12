@@ -7,6 +7,7 @@
 
 import type { ContentLoader } from '$lib/content/types'
 import type { EpubBook } from '$lib/epub/types'
+import { BOOK_FONT_PREFIX, FONT_CATALOG, resolveFontStack } from '$lib/fonts'
 import type { ReaderView } from '$lib/reader/types'
 import type { OpenReaderSessionOptions, ReaderSession } from '../types'
 import { createReaderSession } from './session'
@@ -18,7 +19,19 @@ export interface SessionParts extends Pick<
 > {
     openEpub(file: Blob): Promise<EpubBook>
     createContentLoader(options: { book: EpubBook }): ContentLoader
+    /**
+     * Makes the font of a `fontId` setting ready for layout. The open calls it only for a
+     * bundled font and for a font of the book, and waits for it for `FONT_WAIT_MS` at most.
+     */
+    loadFont(fontId: string): Promise<unknown>
 }
+
+/**
+ * The longest time that the first page waits for the font of the settings. A page that shows
+ * before its font gets a second layout when the font arrives, and the text moves on screen.
+ * After this time the page shows in a fallback font, so a slow network does not hold the book.
+ */
+export const FONT_WAIT_MS = 500
 
 /**
  * The options of `openSessionWith`. With `signal` the caller can stop an open that runs, for
@@ -53,6 +66,30 @@ function untilAborted<T>(work: Promise<T>, signal: AbortSignal | undefined): Pro
         const onAbort = (): void => reject(abortError())
         signal.addEventListener('abort', onAbort, { once: true })
         work.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort))
+    })
+}
+
+/** True for a font that the app downloads. The publisher font and a system font need no load. */
+function isBundledFont(fontId: string): boolean {
+    return FONT_CATALOG.some((entry) => entry.id === fontId && entry.load !== undefined)
+}
+
+/**
+ * Starts the load of a font now. Resolves when the font is ready for layout, and `FONT_WAIT_MS`
+ * after the call at the latest. Never rejects.
+ */
+function fontReady(parts: SessionParts, fontId: string): Promise<void> {
+    return new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, FONT_WAIT_MS)
+        const done = (): void => {
+            clearTimeout(timer)
+            resolve()
+        }
+        try {
+            parts.loadFont(fontId).then(done, done)
+        } catch {
+            done()
+        }
     })
 }
 
@@ -96,6 +133,11 @@ export async function openSessionWith(
     ])
     saved.catch(ignore)
 
+    // A bundled font does not need the book file, so its load also starts now. The open of a
+    // book with the publisher font or a system font has no wait for a font.
+    const { fontId } = parts.settings.get()
+    const bundledFont = isBundledFont(fontId) ? fontReady(parts, fontId) : undefined
+
     const [record, file] = await Promise.all([storage.getBook(bookId), storage.getFile(bookId)])
     throwIfAborted(signal)
     if (!record || !file) throw new Error('book-not-found')
@@ -105,8 +147,20 @@ export async function openSessionWith(
     let session: ReaderSession | undefined
     try {
         throwIfAborted(signal)
-        const [[progress, bookmarks, highlights]] = await Promise.all([saved, content.prepare()])
+        const [[progress, bookmarks, highlights]] = await Promise.all([
+            saved,
+            content.prepare(),
+            bundledFont,
+        ])
         throwIfAborted(signal)
+        // The font faces of the book are in the page only after prepare().
+        const isBookFont =
+            fontId.startsWith(BOOK_FONT_PREFIX) &&
+            resolveFontStack({ fontId, bookFonts: content.bookFonts }) !== null
+        if (isBookFont) {
+            await fontReady(parts, fontId)
+            throwIfAborted(signal)
+        }
         session = createReaderSession({
             record,
             book,
