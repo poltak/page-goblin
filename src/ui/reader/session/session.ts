@@ -50,6 +50,9 @@ import { buildToc, createTocIndex } from './toc'
 /** Time with no relocate before the position goes to storage. */
 export const PROGRESS_SAVE_DELAY_MS = 800
 
+/** The message of the error that `addHighlight` rejects with after `destroy()`. */
+export const HIGHLIGHT_CLOSED_MESSAGE = 'The book is closed, so the highlight was not saved.'
+
 const EXTERNAL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:'])
 
 type TimerHandle = ReturnType<typeof setTimeout>
@@ -354,13 +357,16 @@ export function createReaderSession(deps: ReaderSessionDeps): ReaderSession {
 
     function handleRelocate(info: RelocateInfo): void {
         position = info
-        savedLocator = progressLocator(info)
+        const next = progressLocator(info)
+        // The open of a book and a new layout send a relocate at the same place. A write would
+        // give the record a new time, and the restore of a backup would then keep it.
+        // A listener can destroy the session, and destroy() must then write a new position.
+        if (compareLocators(next, savedLocator) !== 0) progressDirty = true
+        savedLocator = next
         chapterLengths.set(info.locator.spineIndex, info.chapterLength)
-        // A listener can destroy the session, and destroy() must then write this position.
-        progressDirty = true
         emitter.emit('relocate', info)
         if (destroyed) return
-        scheduleProgressSave()
+        if (progressDirty) scheduleProgressSave()
         measureSpeed(info)
         loadAnchors(info.locator.spineIndex)
     }
@@ -732,12 +738,17 @@ export function createReaderSession(deps: ReaderSessionDeps): ReaderSession {
         }
     }
 
+    /**
+     * Rejects with an Error that has the message `HIGHLIGHT_CLOSED_MESSAGE` when the session is
+     * destroyed before the write starts. A resolved promise always has a record that is in
+     * storage, so the caller can tell the user about a highlight that was not saved.
+     */
     function addHighlight(highlight: NewHighlight): Promise<HighlightRecord> {
+        // A destroyed session stores nothing.
+        if (destroyed) return Promise.reject(new Error(HIGHLIGHT_CLOSED_MESSAGE))
         const created = newHighlightRecord(highlight)
-        // A destroyed session stores nothing. The caller still gets a record.
-        if (destroyed) return Promise.resolve(created)
         return queueAnnotation(async () => {
-            if (destroyed) return created
+            if (destroyed) throw new Error(HIGHLIGHT_CLOSED_MESSAGE)
             await storage.putHighlight(created)
             setHighlights([...highlights, created].sort(compareHighlights))
             if (!destroyed) view.clearSelection()

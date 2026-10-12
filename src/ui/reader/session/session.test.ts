@@ -16,7 +16,7 @@ import type {
     ProgressRecord,
 } from '$lib/storage/types'
 import type { ReaderSession, ReaderSessionEvents, SearchResult } from '../types'
-import { createReaderSession, PROGRESS_SAVE_DELAY_MS } from './session'
+import { createReaderSession, HIGHLIGHT_CLOSED_MESSAGE, PROGRESS_SAVE_DELAY_MS } from './session'
 import {
     BOOK_ID,
     CHAPTER_1,
@@ -812,13 +812,9 @@ describe('progress', () => {
             // The screen shows the page as the view gives it.
             expect(session.position?.locator).toEqual({ spineIndex: CHAPTER_2, offset: 500 })
 
+            // The position in storage is the same, so there is nothing to write.
             await session.destroy()
-            expect(save).toHaveBeenCalledTimes(1)
-            // 100 + 1000 characters before the chapter, and 700 of its 2000 characters.
-            expect(save.mock.calls[0][0]).toMatchObject({
-                locator: { spineIndex: CHAPTER_2, offset: 700 },
-                fraction: 1450 / 4000,
-            })
+            expect(save).not.toHaveBeenCalled()
         })
 
         it('keeps the saved position through each new layout', async () => {
@@ -828,7 +824,24 @@ describe('progress', () => {
             views.current.relocate(chapter2Page(650, 1050))
             views.current.relocate(chapter2Page(700, 1100))
             vi.advanceTimersByTime(PROGRESS_SAVE_DELAY_MS)
-            expect(save.mock.calls[0][0].locator).toEqual({ spineIndex: CHAPTER_2, offset: 700 })
+            expect(save).not.toHaveBeenCalled()
+        })
+
+        it('writes the saved position, not the page start, after a turn away and back', async () => {
+            const { views, storage } = await open({ progress: saved })
+            const save = vi.spyOn(storage, 'saveProgress')
+            views.current.relocate(chapter2Page(500, 900))
+            views.current.relocate(chapter2Page(900, 1300))
+            // A new layout of the page after the turn. Its start is earlier now.
+            views.current.relocate(chapter2Page(850, 1250))
+            vi.advanceTimersByTime(PROGRESS_SAVE_DELAY_MS)
+            expect(save).toHaveBeenCalledTimes(1)
+            // The fraction is that of the saved position too: 100 + 1000 characters before the
+            // chapter, and 900 of 4000 parts of its 2000 characters.
+            expect(save.mock.calls[0][0]).toMatchObject({
+                locator: { spineIndex: CHAPTER_2, offset: 900 },
+                fraction: 1550 / 4000,
+            })
         })
 
         it('saves the first character of the page after a page turn', async () => {
@@ -862,9 +875,86 @@ describe('progress', () => {
         it('saves the position of a page with no text', async () => {
             const { views, storage } = await open({ progress: saved })
             const save = vi.spyOn(storage, 'saveProgress')
+            // The page is at the saved position, so there is nothing to write.
             views.current.relocate(chapter2Page(700, 700))
             vi.advanceTimersByTime(PROGRESS_SAVE_DELAY_MS)
-            expect(save.mock.calls[0][0].locator).toEqual({ spineIndex: CHAPTER_2, offset: 700 })
+            expect(save).not.toHaveBeenCalled()
+
+            views.current.relocate(chapter2Page(900, 900))
+            vi.advanceTimersByTime(PROGRESS_SAVE_DELAY_MS)
+            expect(save).toHaveBeenCalledTimes(1)
+            expect(save.mock.calls[0][0].locator).toEqual({ spineIndex: CHAPTER_2, offset: 900 })
+        })
+    })
+
+    describe('a relocate at the position that storage has', () => {
+        const OLD_TIME = START_TIME - 30 * 24 * 60 * 60 * 1000
+
+        it('writes nothing for a new book that opens and closes at its first page', async () => {
+            const { session, views, storage } = await open()
+            const save = vi.spyOn(storage, 'saveProgress')
+            views.current.relocate(page({ spineIndex: COVER, start: 0, end: 40 }))
+            expect(session.position?.locator).toEqual({ spineIndex: COVER, offset: 0 })
+
+            await session.destroy()
+            expect(save).not.toHaveBeenCalled()
+            expect(await storage.getProgress(BOOK_ID)).toBeUndefined()
+        })
+
+        it('keeps the time of the stored record when a book opens and closes', async () => {
+            const stored: ProgressRecord = {
+                bookId: BOOK_ID,
+                locator: { spineIndex: CHAPTER_2, offset: 700 },
+                fraction: 0.3625,
+                updatedAt: OLD_TIME,
+            }
+            const { session, views, storage } = await open({ progress: stored })
+            await storage.saveProgress(stored)
+            // The view shows the page that has the saved position.
+            views.current.relocate(chapter2Page(700, 1100))
+            vi.advanceTimersByTime(PROGRESS_SAVE_DELAY_MS)
+            window.dispatchEvent(new Event('pagehide'))
+            setVisibility('hidden')
+            await session.destroy()
+
+            // A backup with a later time than this one must be able to replace the position.
+            expect(await storage.getProgress(BOOK_ID)).toEqual(stored)
+        })
+
+        it('writes a new time when the reader turns the page', async () => {
+            const stored: ProgressRecord = {
+                bookId: BOOK_ID,
+                locator: { spineIndex: CHAPTER_2, offset: 700 },
+                fraction: 0.3625,
+                updatedAt: OLD_TIME,
+            }
+            const { session, views, storage } = await open({ progress: stored })
+            await storage.saveProgress(stored)
+            views.current.relocate(chapter2Page(700, 1100))
+            views.current.relocate(chapter2Page(1100, 1500))
+            await session.destroy()
+
+            expect(await storage.getProgress(BOOK_ID)).toMatchObject({
+                locator: { spineIndex: CHAPTER_2, offset: 1100 },
+                updatedAt: START_TIME,
+            })
+        })
+
+        it('tries a failed write again at a relocate at the same place', async () => {
+            const { views, storage } = await open()
+            const save = vi
+                .spyOn(storage, 'saveProgress')
+                .mockRejectedValueOnce(new Error('closed'))
+            views.current.relocate(chapter2Page(120, 400))
+            vi.advanceTimersByTime(PROGRESS_SAVE_DELAY_MS)
+            await settle()
+            expect(await storage.getProgress(BOOK_ID)).toBeUndefined()
+
+            // A new layout of the same page.
+            views.current.relocate(chapter2Page(120, 380))
+            vi.advanceTimersByTime(PROGRESS_SAVE_DELAY_MS)
+            expect(save).toHaveBeenCalledTimes(2)
+            expect((await storage.getProgress(BOOK_ID))?.locator.offset).toBe(120)
         })
     })
 
@@ -2543,12 +2633,6 @@ describe('destroy', () => {
         await expect(session.removeBookmark('b1')).resolves.toBeUndefined()
         await expect(session.updateHighlight('h1', { color: 'blue' })).resolves.toBeUndefined()
         await expect(session.removeHighlight('h1')).resolves.toBeUndefined()
-        const unsaved = await session.addHighlight({
-            range: { spineIndex: CHAPTER_2, start: 3, end: 9 },
-            text: 'second',
-            color: 'green',
-        })
-        expect(unsaved.color).toBe('green')
         const onResults = vi.fn()
         await expect(
             session.search({ query: 'whale', signal: new AbortController().signal, onResults }),
@@ -2572,6 +2656,60 @@ describe('destroy', () => {
         expect((await storage.listHighlights(BOOK_ID)).map((highlight) => highlight.id)).toEqual([
             'h1',
         ])
+    })
+
+    it('rejects a new highlight after destroy() and stores nothing', async () => {
+        const { session, views, storage, events } = await open({
+            highlights: [makeHighlight('h1')],
+        })
+        const put = vi.spyOn(storage, 'putHighlight')
+        await session.destroy()
+        events.length = 0
+        views.log.length = 0
+
+        // The Undo of a removal can come after the reader closed the book. The caller must
+        // know that the highlight is not back.
+        const added = session.addHighlight({
+            range: { spineIndex: CHAPTER_2, start: 3, end: 9 },
+            text: 'second',
+            color: 'green',
+        })
+        await expect(added).rejects.toBeInstanceOf(Error)
+        await expect(added).rejects.toThrow(HIGHLIGHT_CLOSED_MESSAGE)
+        expect(HIGHLIGHT_CLOSED_MESSAGE).toBe('The book is closed, so the highlight was not saved.')
+
+        expect(put).not.toHaveBeenCalled()
+        expect(views.log).toEqual([])
+        expect(events).toEqual([])
+        expect(session.highlights.map((highlight) => highlight.id)).toEqual(['h1'])
+        expect((await storage.listHighlights(BOOK_ID)).map((highlight) => highlight.id)).toEqual([
+            'h1',
+        ])
+    })
+
+    it('rejects a new highlight that waits for an earlier change at the time of destroy()', async () => {
+        const { session, storage } = await open({ highlights: [makeHighlight('h1')] })
+        let finishDelete = (): void => {}
+        vi.spyOn(storage, 'deleteHighlight').mockReturnValue(
+            new Promise<void>((resolve) => {
+                finishDelete = resolve
+            }),
+        )
+        const put = vi.spyOn(storage, 'putHighlight')
+        const removed = session.removeHighlight('h1')
+        const added = session.addHighlight({
+            range: { spineIndex: CHAPTER_2, start: 3, end: 9 },
+            text: 'second',
+            color: 'green',
+        })
+        const result = expect(added).rejects.toThrow(HIGHLIGHT_CLOSED_MESSAGE)
+        await settle()
+        await session.destroy()
+        finishDelete()
+
+        await removed
+        await result
+        expect(put).not.toHaveBeenCalled()
     })
 
     it('does not touch the view when a change of annotations completes after destroy()', async () => {

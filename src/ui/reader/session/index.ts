@@ -1,5 +1,5 @@
 export { openReaderSession } from './open'
-export { createReaderSession, PROGRESS_SAVE_DELAY_MS } from './session'
+export { createReaderSession, HIGHLIGHT_CLOSED_MESSAGE, PROGRESS_SAVE_DELAY_MS } from './session'
 export type { ReaderSessionDeps, SessionStorage, SessionTimers } from './session'
 export { SEARCH_MIN_QUERY_LENGTH, SEARCH_RESULT_LIMIT } from './search'
 export { BACK_STACK_LIMIT } from './back-stack'

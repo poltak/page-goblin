@@ -144,6 +144,7 @@ export interface ReaderSession {
     toggleBookmark(): Promise<void>
     removeBookmark(id: string): Promise<void>
 
+    /** Rejects after `destroy()`. A resolved promise always has a record that is in storage. */
     addHighlight(highlight: NewHighlight): Promise<HighlightRecord>
     updateHighlight(id: string, patch: { color?: HighlightColor; note?: string }): Promise<void>
     removeHighlight(id: string): Promise<void>
