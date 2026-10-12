@@ -29,7 +29,11 @@ export interface ManifestItem {
     id: string
     /** Normalised path inside the ZIP container (no leading slash, percent-decoded). */
     path: string
-    /** Lower-case media type. */
+    /**
+     * Lower-case media type. For stylesheet, image and font files the file extension has
+     * priority over the declared type, because real books declare many wrong types. Fonts are
+     * always `font/ttf`, `font/otf`, `font/woff` or `font/woff2`.
+     */
     mediaType: string
     properties: string[]
     /** Uncompressed size in bytes. 0 when the file is not in the container. */
@@ -47,6 +51,7 @@ export interface SpineItem {
     linear: boolean
     /** Uncompressed size in bytes. */
     size: number
+    /** The itemref properties, then the manifest item properties, with no duplicates. */
     properties: string[]
 }
 
