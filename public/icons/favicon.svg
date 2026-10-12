@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+    <rect width="512" height="512" rx="112" fill="#22201c" />
+    <!-- The drawing is larger than in icon.svg, so it stays clear at 16 pixels. -->
+    <g transform="translate(-38.4 -38.4) scale(1.15)">
+        <path fill="#fbfaf8" d="M244 172C208 146 150 140 96 152v200c54-12 112-6 148 20z" />
+        <path fill="#fbfaf8" d="M268 172c36-26 94-32 148-20v200c-54-12-112-6-148 20z" />
+        <path fill="#b4552d" d="M330 124h44v140l-22-20-22 20z" />
+    </g>
+</svg>

@@ -23,5 +23,12 @@
             "$lib/*": ["./src/lib/*"]
         }
     },
-    "include": ["src/**/*.ts", "src/**/*.js", "scripts/**/*.ts", "*.config.ts", "*.config.js"]
+    "include": [
+        "src/**/*.ts",
+        "src/**/*.js",
+        "scripts/**/*.ts",
+        "build/**/*.ts",
+        "*.config.ts",
+        "*.config.js"
+    ]
 }
