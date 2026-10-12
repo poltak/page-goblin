@@ -2,6 +2,8 @@
 
 An EPUB reader that runs fully in the browser. It has a book library, a paged view, a scroll view, a speed reader, and read-aloud with the voices of the browser. Books and reading data stay on the device in IndexedDB. The site is static and installs as a PWA.
 
+Live site: https://poltak.github.io/page-goblin/
+
 The app is plain HTML, CSS and TypeScript. It has no UI library and no runtime npm dependency. Vite, TypeScript and Vitest run at build time only.
 
 ## Features
