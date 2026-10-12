@@ -170,6 +170,19 @@ describe('the app menu', () => {
         expect(mocks.promptInstall).not.toHaveBeenCalled()
     })
 
+    it('says in the install text that Safari can remove the data and that the app starts empty', () => {
+        mocks.isIos.mockReturnValue(true)
+        press('#app-menu-button')
+        press('#app-menu [data-action="install"]')
+
+        const text = el('#install-dialog .modal-body').textContent?.replace(/\s+/g, ' ')
+        expect(text).toContain('Safari can remove the books and notes of this page after 7 days')
+        expect(text).toContain('starts with an empty library')
+        expect(text).toContain('its first start needs a connection')
+        expect(text).toContain('export a backup here')
+        expect(text).toContain('import the backup there')
+    })
+
     it('hides "Install app" on iOS when the app is installed already', () => {
         mocks.isIos.mockReturnValue(true)
         mocks.isStandalone.mockReturnValue(true)

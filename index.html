@@ -165,6 +165,15 @@
                             >.
                         </p>
                     </div>
+
+                    <div class="empty-state" id="library-error" role="alert" hidden>
+                        <svg class="icon" aria-hidden="true"><use href="#i-info" /></svg>
+                        <h2 class="empty-state-title">The library did not open</h2>
+                        <p class="empty-state-text" id="library-error-text"></p>
+                        <button class="btn btn-primary" type="button" data-action="retry-library">
+                            Try again
+                        </button>
+                    </div>
                 </div>
 
                 <input
@@ -372,6 +381,11 @@
                 <p class="storage-books"></p>
                 <p class="storage-usage"></p>
                 <p>Books and notes are stored in this browser, on this device only.</p>
+                <p class="storage-safari" hidden>
+                    Safari can remove the books and notes after 7 days with no visit. The installed
+                    app keeps its books and notes. Choose Install app in the More menu, or export a
+                    backup of your positions and notes.
+                </p>
             </div>
             <div class="modal-actions">
                 <button class="btn btn-primary" type="button" data-close>Done</button>
@@ -380,7 +394,18 @@
 
         <dialog class="modal" id="install-dialog" aria-labelledby="install-heading" closedby="any">
             <h2 class="modal-title" id="install-heading">Install app</h2>
-            <p class="modal-body">To install: tap Share, then Add to Home Screen</p>
+            <div class="modal-body">
+                <p>To install: tap Share, then Add to Home Screen.</p>
+                <p>
+                    Safari can remove the books and notes of this page after 7 days with no visit.
+                    The installed app keeps its books and notes.
+                </p>
+                <p>
+                    The installed app starts with an empty library, and its first start needs a
+                    connection. To move your library, export a backup here. Then add the book files
+                    in the app and import the backup there.
+                </p>
+            </div>
             <div class="modal-actions">
                 <button class="btn btn-primary" type="button" data-close>Done</button>
             </div>

@@ -21,6 +21,18 @@ import type { ImportSummary } from './import-queue'
 import { lazy, reportLoadError } from './lazy'
 import { compareBooks, insertIndex, matchesSearch, searchKey, searchWords } from './sort-filter'
 
+export const LOAD_ERROR_TEXT = 'The browser did not open the book storage of this page.'
+
+/**
+ * The text for a library that did not open. A plain Error comes from the storage layer, which
+ * writes a sentence for the user when it knows the cause, for example blocked site data. An
+ * error of the browser has technical text, so it gets a general sentence.
+ */
+export function loadErrorText(error: unknown): string {
+    const own = error instanceof Error && error.name === 'Error' ? error.message.trim() : ''
+    return own || LOAD_ERROR_TEXT
+}
+
 /** How long a card keeps its mark. The animation in library.css takes 2 seconds. */
 const MARK_MS = 2200
 /** Covers load when a card is this near to the screen. */
@@ -71,6 +83,8 @@ export function createLibraryScreen(options: LibraryScreenOptions): LibraryScree
     const sortSelect = qs<HTMLSelectElement>('#library-sort', root)
     const countText = qs('#library-count', root)
     const emptyState = qs('#library-empty', root)
+    const errorState = qs('#library-error', root)
+    const errorText = qs('#library-error-text', root)
     const noMatch = qs('#library-no-match', root)
     const fileInput = qs<HTMLInputElement>('#book-files', root)
     const header = qs('.library-header', root)
@@ -230,15 +244,20 @@ export function createLibraryScreen(options: LibraryScreenOptions): LibraryScree
     }
 
     function load(): Promise<void> {
-        loading ??= readLibrary().catch((error: unknown) => {
-            console.error(error)
-            // The next call tries again.
-            loading = null
-            showToast({
-                message: 'The library did not open. Reload the page to try again.',
-                tone: 'error',
-            })
-        })
+        loading ??= readLibrary().then(
+            () => {
+                errorState.hidden = true
+            },
+            (error: unknown) => {
+                console.error(error)
+                // The next call tries again.
+                loading = null
+                // The message stays in the page. With no message, a library that did not
+                // open looks like a library that lost its books.
+                errorText.textContent = loadErrorText(error)
+                errorState.hidden = false
+            },
+        )
         return loading
     }
 
@@ -490,6 +509,7 @@ export function createLibraryScreen(options: LibraryScreenOptions): LibraryScree
         const action = (event.target as Element).closest<HTMLElement>('[data-action]')?.dataset
             .action
         if (action === 'add-books') fileInput.click()
+        else if (action === 'retry-library') void load()
         else if (action === 'clear-search') {
             setSearch('')
             searchInput.focus()

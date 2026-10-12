@@ -9,7 +9,7 @@ import { createLibraryStorage } from '$lib/storage/library-storage'
 import type { BookRecord, LibraryStorage } from '$lib/storage/types'
 import { installOverlayMethods, mountPage } from '../app/testing/page'
 import { clearToasts } from '../app/toast'
-import { createLibraryScreen } from './index'
+import { createLibraryScreen, LOAD_ERROR_TEXT, loadErrorText } from './index'
 import type { LibraryScreen } from './index'
 
 const mocks = vi.hoisted(() => ({
@@ -232,21 +232,148 @@ describe('the library at the start', () => {
         expect((window as { hacked?: boolean }).hacked).toBeUndefined()
     })
 
-    it('shows a toast and tries again when the storage fails', async () => {
-        const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    it('shows no message about the storage for a library that opens', async () => {
+        expect(el('#library-error').hidden).toBe(true)
+
+        await startScreen().load()
+
+        expect(el('#library-error').hidden).toBe(true)
+    })
+})
+
+describe('a library that does not open', () => {
+    const UNAVAILABLE = 'Book storage is not available in this browser.'
+    const errorState = () => el('#library-error')
+    const errorText = () => el('#library-error-text').textContent
+
+    beforeEach(() => {
+        vi.spyOn(console, 'error').mockImplementation(() => {})
+    })
+
+    afterEach(() => {
+        vi.restoreAllMocks()
+    })
+
+    /** A browser that blocks the site data of the page. */
+    function blockStorage(): void {
+        storage.close()
+        storage = createLibraryStorage({
+            databaseName: 'library-screen-test',
+            indexedDB: {
+                open() {
+                    throw new DOMException('The operation is insecure.', 'SecurityError')
+                },
+            } as unknown as IDBFactory,
+        })
+    }
+
+    it('says in the page why, with the text of the storage, and shows no empty library', async () => {
+        blockStorage()
+        startScreen()
+
+        await screen.load()
+
+        expect(errorState().hidden).toBe(false)
+        expect(errorState().getAttribute('role')).toBe('alert')
+        expect(errorState().querySelector('.empty-state-title')?.textContent).toBe(
+            'The library did not open',
+        )
+        expect(errorText()).toContain(UNAVAILABLE)
+        expect(errorText()).toContain('Private browsing or blocked site data can cause this.')
+        expect(el('#library-empty').hidden).toBe(true)
+        expect(el('#library-toolbar').hidden).toBe(true)
+        // The message stays. A toast goes away after some seconds.
+        expect(toastTexts()).toEqual([])
+    })
+
+    it('uses a general sentence for an error of the browser', async () => {
+        vi.spyOn(storage, 'listBooks').mockRejectedValueOnce(
+            new DOMException('The connection is closing.', 'InvalidStateError'),
+        )
+        startScreen()
+
+        await screen.load()
+
+        expect(errorState().hidden).toBe(false)
+        expect(errorText()).toBe(LOAD_ERROR_TEXT)
+        expect(LOAD_ERROR_TEXT).toBe('The browser did not open the book storage of this page.')
+    })
+
+    it('uses the general sentence for an error with no sentence for the user', () => {
+        expect(loadErrorText(new Error('  '))).toBe(LOAD_ERROR_TEXT)
+        expect(loadErrorText(new TypeError('x is not a function'))).toBe(LOAD_ERROR_TEXT)
+        expect(loadErrorText('a string')).toBe(LOAD_ERROR_TEXT)
+        expect(loadErrorText(undefined)).toBe(LOAD_ERROR_TEXT)
+        expect(loadErrorText(new Error('Close that tab and try again.'))).toBe(
+            'Close that tab and try again.',
+        )
+    })
+
+    it('puts the text of the error into the page as text', async () => {
+        vi.spyOn(storage, 'listBooks').mockRejectedValueOnce(new Error(HOSTILE_TITLE))
+        startScreen()
+
+        await screen.load()
+
+        expect(errorText()).toBe(HOSTILE_TITLE)
+        expect(errorState().querySelector('img')).toBeNull()
+    })
+
+    it('tries again at the next load, and the message goes away', async () => {
         const listBooks = vi
             .spyOn(storage, 'listBooks')
             .mockRejectedValueOnce(new Error('The database did not open.'))
         startScreen()
 
         await screen.load()
-        expect(toastTexts()).toEqual(['The library did not open. Reload the page to try again.'])
-        expect(el('#library-empty').hidden).toBe(true)
+        expect(errorState().hidden).toBe(false)
+        expect(errorText()).toBe('The database did not open.')
 
         await screen.load()
         expect(listBooks).toHaveBeenCalledTimes(2)
+        expect(errorState().hidden).toBe(true)
         expect(el('#library-empty').hidden).toBe(false)
-        error.mockRestore()
+    })
+
+    it('tries again with the button, and shows the books', async () => {
+        await addBooks(makeBook('a'))
+        const listBooks = vi
+            .spyOn(storage, 'listBooks')
+            .mockRejectedValueOnce(new Error('The database did not open.'))
+        startScreen()
+        await screen.load()
+
+        errorState().querySelector<HTMLElement>('[data-action="retry-library"]')!.click()
+
+        await vi.waitFor(() => expect(cardIds()).toEqual(['a']))
+        expect(listBooks).toHaveBeenCalledTimes(2)
+        expect(errorState().hidden).toBe(true)
+        expect(el('#library-toolbar').hidden).toBe(false)
+    })
+
+    it('keeps the message when the next try fails too', async () => {
+        blockStorage()
+        startScreen()
+        await screen.load()
+
+        errorState().querySelector<HTMLElement>('[data-action="retry-library"]')!.click()
+        await screen.load()
+
+        expect(errorState().hidden).toBe(false)
+        expect(errorText()).toContain(UNAVAILABLE)
+    })
+
+    it('keeps the header in use', async () => {
+        blockStorage()
+        startScreen()
+        await screen.load()
+        const openFiles = vi.spyOn(el<HTMLInputElement>('#book-files'), 'click')
+
+        el('.library-add').click()
+        el('#app-menu-button').click()
+
+        expect(openFiles).toHaveBeenCalledTimes(1)
+        expect('open' in el('#app-menu').dataset).toBe(true)
     })
 })
 

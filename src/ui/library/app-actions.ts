@@ -3,6 +3,7 @@
  * The library screen loads this file when the user chooses one of them.
  */
 
+import { isIos, isStandalone } from '$lib/pwa/install'
 import { getStorageEstimate } from '$lib/storage/storage-info'
 import type { LibraryStorage } from '$lib/storage/types'
 import { openDialog } from '../app/dialog'
@@ -40,6 +41,9 @@ export function createAppActions({
             qs('.storage-books', dialog).textContent = bookCountText(count, count)
             const usage = qs('.storage-usage', dialog)
             usage.textContent = ''
+            // Safari removes the data of a site that the user did not visit for 7 days. The
+            // installed app on iOS has its own storage, and this rule does not apply to it.
+            qs('.storage-safari', dialog).hidden = !(isIos() && !isStandalone())
             openDialog(dialog, opener)
 
             const estimate = await getStorageEstimate()

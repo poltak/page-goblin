@@ -23,6 +23,8 @@ const restored: RestoreResult = {
 }
 
 const mocks = vi.hoisted(() => ({
+    isIos: vi.fn(() => false),
+    isStandalone: vi.fn(() => false),
     getStorageEstimate: vi.fn<() => Promise<{ usage: number; quota: number } | null>>(),
     createBackup: vi.fn(),
     parseBackup: vi.fn(),
@@ -30,6 +32,7 @@ const mocks = vi.hoisted(() => ({
     downloadTextFile: vi.fn(),
 }))
 
+vi.mock('$lib/pwa/install', () => ({ isIos: mocks.isIos, isStandalone: mocks.isStandalone }))
 vi.mock('$lib/storage/storage-info', () => ({ getStorageEstimate: mocks.getStorageEstimate }))
 vi.mock('$lib/annotations', () => ({
     createBackup: mocks.createBackup,
@@ -55,6 +58,8 @@ beforeEach(() => {
     mountPage()
     installOverlayMethods()
     vi.clearAllMocks()
+    mocks.isIos.mockReturnValue(false)
+    mocks.isStandalone.mockReturnValue(false)
     mocks.createBackup.mockResolvedValue(backup)
     mocks.parseBackup.mockImplementation(() => backup)
     mocks.restoreBackup.mockResolvedValue(restored)
@@ -100,6 +105,54 @@ describe('storage dialog', () => {
         el<HTMLDialogElement>('#storage-dialog').close()
 
         expect(document.activeElement).toBe(opener)
+    })
+
+    describe('the paragraph about Safari', () => {
+        beforeEach(() => {
+            mocks.getStorageEstimate.mockResolvedValue(null)
+        })
+
+        it('is hidden in the markup, and stays hidden in other browsers', async () => {
+            expect(el('.storage-safari').hidden).toBe(true)
+
+            await actions.showStorage(opener)
+
+            expect(el('.storage-safari').hidden).toBe(true)
+        })
+
+        it('shows in Safari on iOS, and says how to keep the books and notes', async () => {
+            mocks.isIos.mockReturnValue(true)
+
+            await actions.showStorage(opener)
+
+            const paragraph = el('.storage-safari')
+            expect(paragraph.hidden).toBe(false)
+            // The markup can break a sentence over two lines.
+            const text = paragraph.textContent?.replace(/\s+/g, ' ').trim()
+            expect(text).toContain('Safari can remove the books and notes after 7 days')
+            expect(text).toContain('Install app')
+            expect(text).toContain('export a backup')
+        })
+
+        it('is hidden in the installed app on iOS, which keeps its data', async () => {
+            mocks.isIos.mockReturnValue(true)
+            mocks.isStandalone.mockReturnValue(true)
+
+            await actions.showStorage(opener)
+
+            expect(el('.storage-safari').hidden).toBe(true)
+        })
+
+        it('is hidden again when the dialog opens in the installed app', async () => {
+            mocks.isIos.mockReturnValue(true)
+            await actions.showStorage(opener)
+            el<HTMLDialogElement>('#storage-dialog').close()
+            mocks.isStandalone.mockReturnValue(true)
+
+            await actions.showStorage(opener)
+
+            expect(el('.storage-safari').hidden).toBe(true)
+        })
     })
 })
 
