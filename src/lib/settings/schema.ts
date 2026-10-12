@@ -59,6 +59,11 @@ export interface Settings {
     rsvp: RsvpSettings
     speech: SpeechSettings
     librarySort: LibrarySort
+    /**
+     * The measured reading speed in words for each minute. The reader updates it from the page
+     * turns of the user and uses it for the time that is left in a chapter.
+     */
+    readingWpm: number
 }
 
 export const SETTINGS_VERSION = 1
@@ -105,6 +110,10 @@ export const SPEECH_PITCH_MIN = 0.5
 export const SPEECH_PITCH_MAX = 2
 export const SPEECH_PITCH_STEP = 0.1
 
+export const READING_WPM_MIN = 60
+export const READING_WPM_MAX = 900
+export const READING_WPM_STEP = 1
+
 export const DEFAULT_SETTINGS: Settings = Object.freeze({
     theme: 'auto',
     darkTheme: 'dark',
@@ -141,6 +150,7 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
         highlightWords: true,
     }),
     librarySort: 'recent',
+    readingWpm: 230,
 })
 
 interface NumberLimits {
@@ -180,6 +190,11 @@ const SPEECH_PITCH: NumberLimits = {
     min: SPEECH_PITCH_MIN,
     max: SPEECH_PITCH_MAX,
     step: SPEECH_PITCH_STEP,
+}
+const READING_WPM: NumberLimits = {
+    min: READING_WPM_MIN,
+    max: READING_WPM_MAX,
+    step: READING_WPM_STEP,
 }
 
 type UnknownRecord = Record<string, unknown>
@@ -267,5 +282,6 @@ export function normalizeSettings(raw: unknown): Settings {
             highlightWords: toBoolean(speech.highlightWords) ?? defaults.speech.highlightWords,
         },
         librarySort: oneOf(source.librarySort, LIBRARY_SORTS) ?? defaults.librarySort,
+        readingWpm: toNumber(source.readingWpm, READING_WPM) ?? defaults.readingWpm,
     }
 }

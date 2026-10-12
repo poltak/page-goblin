@@ -32,7 +32,10 @@ export interface TocEntry {
 }
 
 export interface ReaderSessionEvents {
-    /** The visible position changed. */
+    /**
+     * The visible position changed. The event also comes a second time with the same data when
+     * the contents entry of the position changes after the chapter anchors load.
+     */
     relocate: RelocateInfo
     bookmarks: readonly BookmarkRecord[]
     highlights: readonly HighlightRecord[]
@@ -45,6 +48,11 @@ export interface ReaderSessionEvents {
     'center-tap': undefined
     'highlight-tap': { highlight: HighlightRecord; bounds: DOMRect }
     'image-tap': { src: string; alt: string }
+    /**
+     * A tap on a note reference link. The session does not follow such a link. The screen shows
+     * the note in a popover (see `loadNote`) and can go to it with `followLink`.
+     */
+    'note-tap': { target: Extract<LinkTarget, { kind: 'internal' }> }
     /** An error that the user must see, for example a chapter that did not load. */
     error: unknown
 }
@@ -65,7 +73,10 @@ export interface SearchOptions {
     signal: AbortSignal
     /** Called with the new results of each chapter, in reading order. */
     onResults(results: SearchResult[]): void
-    /** Called after each chapter with the number of chapters that are done. */
+    /**
+     * Called after each chapter with the number of chapters that are done. A search stops at
+     * 500 results.
+     */
     onProgress?(done: number, total: number): void
 }
 
@@ -115,7 +126,7 @@ export interface ReaderSession {
 
     /** Position of a locator in the whole book from 0 to 1. */
     fractionOf(locator: Locator): number
-    /** Position of the current page in the whole book from 0 to 1. */
+    /** Position of the current page in the whole book from 0 to 1. It is 1 on the last page. */
     readonly fraction: number
     /** The contents entry that the current position is in, or null. */
     readonly currentTocEntry: TocEntry | null
@@ -126,7 +137,10 @@ export interface ReaderSession {
 
     /** True when a bookmark is in the visible text. */
     readonly isBookmarked: boolean
-    /** Add a bookmark at the current position, or remove the bookmarks in the visible text. */
+    /**
+     * Add a bookmark at the current position, or remove the bookmarks in the visible text.
+     * The annotation methods reject when storage does not write. The lists then stay the same.
+     */
     toggleBookmark(): Promise<void>
     removeBookmark(id: string): Promise<void>
 
@@ -144,7 +158,8 @@ export interface ReaderSession {
 
     /**
      * The content of a note for a note reference link: a detached copy of the target element (or
-     * of its nearest block ancestor) with its book stylesheets. Null when the target is not there.
+     * of its nearest block ancestor) with its book stylesheets. Null when the target is not there,
+     * the chapter does not load or the note has no content.
      */
     loadNote(target: {
         spineIndex: number

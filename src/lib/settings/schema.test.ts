@@ -8,6 +8,9 @@ import {
     LINE_HEIGHT_MIN,
     LINE_HEIGHT_STEP,
     normalizeSettings,
+    READING_WPM_MAX,
+    READING_WPM_MIN,
+    READING_WPM_STEP,
     RSVP_CONTEXT_WORDS_MAX,
     RSVP_CONTEXT_WORDS_MIN,
     RSVP_CONTEXT_WORDS_STEP,
@@ -60,6 +63,7 @@ const CUSTOM: Settings = {
     },
     speech: { voiceId: 'com.apple.voice.Samantha', rate: 1.4, pitch: 0.8, highlightWords: false },
     librarySort: 'author',
+    readingWpm: 312,
 }
 
 describe('DEFAULT_SETTINGS', () => {
@@ -95,6 +99,7 @@ describe('DEFAULT_SETTINGS', () => {
             },
             speech: { voiceId: null, rate: 1, pitch: 1, highlightWords: true },
             librarySort: 'recent',
+            readingWpm: 230,
         })
     })
 
@@ -308,6 +313,27 @@ describe('normalizeSettings', () => {
             for (const value of notNumbers) expect(wpm(value)).toBe(250)
         })
 
+        it('readingWpm: clamps to 60 through 900 and rounds to 1', () => {
+            const wpm = (value: unknown) => normalizeSettings({ readingWpm: value }).readingWpm
+            expect(wpm(60)).toBe(60)
+            expect(wpm(900)).toBe(900)
+            expect(wpm(59)).toBe(READING_WPM_MIN)
+            expect(wpm(0)).toBe(READING_WPM_MIN)
+            expect(wpm(-200)).toBe(READING_WPM_MIN)
+            expect(wpm(901)).toBe(READING_WPM_MAX)
+            expect(wpm(1e9)).toBe(READING_WPM_MAX)
+            expect(wpm(241.4)).toBe(241)
+            expect(wpm(241.6)).toBe(242)
+            for (const value of notNumbers) expect(wpm(value)).toBe(230)
+        })
+
+        it('does not read readingWpm from the speed reader group', () => {
+            const result = normalizeSettings({ rsvp: { wpm: 400, readingWpm: 500 } })
+            expect(result.readingWpm).toBe(230)
+            expect(result.rsvp.wpm).toBe(400)
+            expect(normalizeSettings({ readingWpm: 500 }).rsvp.wpm).toBe(250)
+        })
+
         it('rsvp.contextWords: clamps to 0 through 100 and rounds', () => {
             const words = (value: unknown) =>
                 normalizeSettings({ rsvp: { contextWords: value } }).rsvp.contextWords
@@ -389,6 +415,7 @@ describe('normalizeSettings', () => {
             ['rsvp.fontSize', RSVP_FONT_SIZE_MIN, RSVP_FONT_SIZE_MAX, RSVP_FONT_SIZE_STEP],
             ['speech.rate', SPEECH_RATE_MIN, SPEECH_RATE_MAX, SPEECH_RATE_STEP],
             ['speech.pitch', SPEECH_PITCH_MIN, SPEECH_PITCH_MAX, SPEECH_PITCH_STEP],
+            ['readingWpm', READING_WPM_MIN, READING_WPM_MAX, READING_WPM_STEP],
         ]
 
         function read(path: string, value: number): number {

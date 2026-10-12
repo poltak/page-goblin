@@ -1,0 +1,359 @@
+import { Blob as NodeBlob } from 'node:buffer'
+import { IDBFactory } from 'fake-indexeddb'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createContentLoader } from '$lib/content'
+import type { ContentLoader } from '$lib/content/types'
+import type { EpubBook } from '$lib/epub/types'
+import { EpubError } from '$lib/epub/types'
+import { createSettingsStore } from '$lib/settings'
+import type { OwnedSettingsStore } from '$lib/settings'
+import { createLibraryStorage } from '$lib/storage'
+import type { LibraryStorage } from '$lib/storage/types'
+import type { ReaderSession } from '../types'
+import { openSessionWith } from './open-with'
+import type { SessionParts } from './open-with'
+import {
+    BOOK_ID,
+    CHAPTER_1,
+    CHAPTER_2,
+    createFakeViews,
+    makeBook,
+    makeBookmark,
+    makeHighlight,
+    makeRecord,
+} from './testing/fixtures'
+import type { FakeViews } from './testing/fixtures'
+
+const OPEN_TIME = 1_700_000_123_456
+
+let storage: LibraryStorage
+let settings: OwnedSettingsStore
+let views: FakeViews
+let container: HTMLElement
+let book: EpubBook
+/** The content loaders that the opens made, each with spies on prepare and dispose. */
+let loaders: ContentLoader[]
+let order: string[]
+const sessions: ReaderSession[] = []
+
+async function settle(rounds = 6): Promise<void> {
+    for (let round = 0; round < rounds; round++) {
+        await new Promise<void>((resolve) => setImmediate(resolve))
+    }
+}
+
+async function addBook(): Promise<void> {
+    await storage.addBook({
+        record: makeRecord(),
+        file: new NodeBlob(['epub bytes']) as unknown as Blob,
+        cover: null,
+    })
+}
+
+function makeParts(changes: Partial<SessionParts> = {}): SessionParts {
+    return {
+        openEpub: vi.fn(async () => book),
+        createContentLoader: vi.fn((options: { book: EpubBook }) => {
+            const loader = createContentLoader(options)
+            const spied: ContentLoader = {
+                prepare: vi.fn(async () => {
+                    await loader.prepare()
+                    order.push('prepared')
+                }),
+                get bookFonts() {
+                    return loader.bookFonts
+                },
+                load: loader.load,
+                loadText: loader.loadText,
+                dispose: vi.fn(loader.dispose),
+            }
+            loaders.push(spied)
+            return spied
+        }),
+        settings,
+        createView: vi.fn((mode, options) => {
+            order.push('view')
+            return views.createView(mode, options)
+        }),
+        systemDark: () => false,
+        watchSystemTheme: () => () => {},
+        now: () => OPEN_TIME,
+        ...changes,
+    }
+}
+
+function openBook(parts: SessionParts = makeParts()): Promise<ReaderSession> {
+    const opened = openSessionWith({ bookId: BOOK_ID, storage, container }, parts)
+    opened.then(
+        (session) => sessions.push(session),
+        () => {},
+    )
+    return opened
+}
+
+beforeEach(() => {
+    // A jsdom Blob does not survive the structured clone of fake-indexeddb.
+    vi.stubGlobal('Blob', NodeBlob)
+    storage = createLibraryStorage({ databaseName: 'open-test', indexedDB: new IDBFactory() })
+    settings = createSettingsStore({ storage: null })
+    views = createFakeViews()
+    container = document.createElement('div')
+    book = makeBook()
+    loaders = []
+    order = []
+})
+
+afterEach(async () => {
+    for (const session of sessions.splice(0)) await session.destroy()
+    settings.destroy()
+    storage.close()
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+})
+
+describe('openSessionWith', () => {
+    it('rejects with "book-not-found" when the library does not have the book', async () => {
+        const parts = makeParts()
+        const opened = openBook(parts)
+        await expect(opened).rejects.toThrow('book-not-found')
+        await expect(opened).rejects.toBeInstanceOf(Error)
+        expect(parts.openEpub).not.toHaveBeenCalled()
+        expect(parts.createView).not.toHaveBeenCalled()
+    })
+
+    it('rejects with "book-not-found" when the file of the book is not there', async () => {
+        await addBook()
+        vi.spyOn(storage, 'getFile').mockResolvedValue(undefined)
+        const parts = makeParts()
+        await expect(openBook(parts)).rejects.toThrow('book-not-found')
+        expect(parts.openEpub).not.toHaveBeenCalled()
+    })
+
+    it('does not leave a rejection with no handler when the book is not there', async () => {
+        const failure = new Error('Unable to read the bookmarks.')
+        vi.spyOn(storage, 'listBookmarks').mockRejectedValue(failure)
+        const unhandled = vi.fn()
+        process.on('unhandledRejection', unhandled)
+        try {
+            await expect(openBook()).rejects.toThrow('book-not-found')
+            await settle()
+            expect(unhandled).not.toHaveBeenCalled()
+        } finally {
+            process.off('unhandledRejection', unhandled)
+        }
+    })
+
+    it('opens the book file and makes a session with the saved data', async () => {
+        await addBook()
+        const progress = {
+            bookId: BOOK_ID,
+            locator: { spineIndex: CHAPTER_2, offset: 77 },
+            fraction: 0.3,
+            updatedAt: 5,
+        }
+        const bookmark = makeBookmark('b1', { locator: { spineIndex: CHAPTER_2, offset: 80 } })
+        const highlight = makeHighlight('h1')
+        await storage.saveProgress(progress)
+        await storage.putBookmark(bookmark)
+        await storage.putHighlight(highlight)
+        const parts = makeParts()
+
+        const session = await openBook(parts)
+
+        expect(parts.openEpub).toHaveBeenCalledTimes(1)
+        const [file] = vi.mocked(parts.openEpub).mock.calls[0]
+        expect(await file.text()).toBe('epub bytes')
+        expect(parts.createContentLoader).toHaveBeenCalledWith({ book })
+
+        expect(session.record).toEqual(makeRecord())
+        expect(session.book).toBe(book)
+        expect(session.content).toBe(loaders[0])
+        expect(session.bookmarks).toEqual([bookmark])
+        expect(session.highlights).toEqual([highlight])
+        expect(session.toc).toHaveLength(5)
+
+        expect(parts.createView).toHaveBeenCalledTimes(1)
+        const { mode, options } = views.current
+        expect(mode).toBe('paged')
+        expect(session.view).toBe(views.current)
+        expect(options.container).toBe(container)
+        expect(options.book).toBe(book)
+        expect(options.content).toBe(loaders[0])
+        expect(options.initial).toEqual({ spineIndex: CHAPTER_2, offset: 77 })
+        expect(options.highlights).toEqual([expect.objectContaining({ id: 'h1' })])
+        expect(options.appearance.theme).toBe('light')
+    })
+
+    it('starts at the first linear spine item when the book has no saved position', async () => {
+        await addBook()
+        book = makeBook({ nonLinear: ['OEBPS/cover.xhtml'] })
+        await openBook()
+        expect(views.current.options.initial).toEqual({ spineIndex: CHAPTER_1, offset: 0 })
+    })
+
+    it('uses the settings store and the system colour scheme that it gets', async () => {
+        await addBook()
+        settings.update({ layout: 'scroll', fontSize: 27 })
+        let themeListener: ((dark: boolean) => void) | undefined
+        const session = await openBook(
+            makeParts({
+                systemDark: () => true,
+                watchSystemTheme(listener) {
+                    themeListener = listener
+                    return () => {}
+                },
+            }),
+        )
+        expect(views.current.mode).toBe('scroll')
+        expect(views.current.options.appearance).toMatchObject({ theme: 'dark', fontSize: 27 })
+
+        themeListener?.(false)
+        expect(views.current.setAppearance).toHaveBeenLastCalledWith(
+            expect.objectContaining({ theme: 'light' }),
+        )
+        settings.update({ layout: 'paged' })
+        expect(session.view).toBe(views.current)
+        expect(views.current.mode).toBe('paged')
+    })
+
+    it('prepares the content loader before it makes the view', async () => {
+        await addBook()
+        await openBook()
+        expect(loaders[0].prepare).toHaveBeenCalledTimes(1)
+        expect(order).toEqual(['prepared', 'view'])
+    })
+
+    it('reads the saved data while the book file opens', async () => {
+        await addBook()
+        const reads: string[] = []
+        const getProgress = storage.getProgress
+        vi.spyOn(storage, 'getProgress').mockImplementation((id) => {
+            reads.push('progress')
+            return getProgress(id)
+        })
+        const parts = makeParts({
+            openEpub: vi.fn(async () => {
+                reads.push('open')
+                return book
+            }),
+        })
+        await openBook(parts)
+        expect(reads).toEqual(['progress', 'open'])
+    })
+
+    it('resolves only after the first chapter of the view is shown', async () => {
+        await addBook()
+        views = createFakeViews({ manualReady: true })
+        let done = false
+        const opened = openBook().then((session) => {
+            done = true
+            return session
+        })
+        await settle()
+        expect(views.views).toHaveLength(1)
+        expect(done).toBe(false)
+
+        views.current.resolveReady()
+        const session = await opened
+        expect(session.view).toBe(views.current)
+    })
+
+    it('writes the time of the open to the book record and does not wait for it', async () => {
+        await addBook()
+        let finishWrite = (): void => {}
+        const update = vi.spyOn(storage, 'updateBook').mockReturnValue(
+            new Promise<void>((resolve) => {
+                finishWrite = resolve
+            }),
+        )
+        await openBook()
+        expect(update).toHaveBeenCalledTimes(1)
+        expect(update).toHaveBeenCalledWith(BOOK_ID, { lastOpenedAt: OPEN_TIME })
+        finishWrite()
+    })
+
+    it('stores the time of the open and keeps the other fields of the record', async () => {
+        await addBook()
+        await openBook()
+        await settle()
+        expect(await storage.getBook(BOOK_ID)).toEqual(makeRecord({ lastOpenedAt: OPEN_TIME }))
+    })
+
+    it('opens the book when the write of the open time fails', async () => {
+        await addBook()
+        vi.spyOn(storage, 'updateBook').mockRejectedValue(new Error('quota'))
+        const session = await openBook()
+        await settle()
+        expect(session.view).toBe(views.current)
+    })
+
+    it('opens the book when the write of the open time throws', async () => {
+        await addBook()
+        vi.spyOn(storage, 'updateBook').mockImplementation(() => {
+            throw new Error('closed')
+        })
+        const session = await openBook()
+        expect(session.view).toBe(views.current)
+        expect(views.current.isDestroyed).toBe(false)
+    })
+
+    it('destroys the view and the loader and rejects when the first chapter does not load', async () => {
+        await addBook()
+        views = createFakeViews({ manualReady: true })
+        const update = vi.spyOn(storage, 'updateBook')
+        const save = vi.spyOn(storage, 'saveProgress')
+        const failure = new Error('The first chapter did not load.')
+        const result = expect(openBook()).rejects.toBe(failure)
+        await settle()
+        views.current.rejectReady(failure)
+        await result
+
+        expect(views.current.isDestroyed).toBe(true)
+        expect(loaders[0].dispose).toHaveBeenCalledTimes(1)
+        expect(update).not.toHaveBeenCalled()
+        expect(save).not.toHaveBeenCalled()
+    })
+
+    it('waits for the view of a new layout when the setting changes during the open', async () => {
+        await addBook()
+        views = createFakeViews({ manualReady: true })
+        let done = false
+        const opened = openBook().then((session) => {
+            done = true
+            return session
+        })
+        await settle()
+        const first = views.current
+        settings.update({ layout: 'scroll' })
+        expect(views.views).toHaveLength(2)
+
+        // The first view is gone, so its result does not count.
+        first.rejectReady(new Error('destroyed'))
+        await settle()
+        expect(done).toBe(false)
+
+        views.current.resolveReady()
+        const session = await opened
+        expect(session.view).toBe(views.current)
+        expect(views.current.mode).toBe('scroll')
+    })
+
+    it('rejects with the error of the EPUB parser', async () => {
+        await addBook()
+        const failure = new EpubError('drm', 'The book has DRM.')
+        const parts = makeParts({ openEpub: vi.fn(async () => Promise.reject(failure)) })
+        await expect(openBook(parts)).rejects.toBe(failure)
+        expect(parts.createContentLoader).not.toHaveBeenCalled()
+        expect(parts.createView).not.toHaveBeenCalled()
+    })
+
+    it('disposes the loader and rejects when the saved data cannot be read', async () => {
+        await addBook()
+        const failure = new Error('Unable to read the bookmarks.')
+        vi.spyOn(storage, 'listBookmarks').mockRejectedValue(failure)
+        const parts = makeParts()
+        await expect(openBook(parts)).rejects.toBe(failure)
+        expect(loaders[0].dispose).toHaveBeenCalledTimes(1)
+        expect(parts.createView).not.toHaveBeenCalled()
+    })
+})
