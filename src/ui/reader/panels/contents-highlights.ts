@@ -11,6 +11,7 @@ import { HIGHLIGHT_COLORS } from '$lib/types'
 import type { HighlightColor } from '$lib/types'
 import { openDialog } from '../../app/dialog'
 import { createMenu } from '../../app/menu'
+import { showToast } from '../../app/toast'
 import type { ToastOptions } from '../../app/toast'
 import { on, qs, qsa } from '../../dom'
 import type { ReaderSession } from '../types'
@@ -28,6 +29,8 @@ const COLOR_NAMES: Record<HighlightColor, string> = {
     pink: 'Pink',
     purple: 'Purple',
 }
+
+export const HIGHLIGHT_UNDO_ERROR = 'The highlight was not put back.'
 
 /** The longest file name start that a title gives. */
 const FILE_NAME_MAX = 80
@@ -116,19 +119,31 @@ export function createHighlightsView(options: HighlightsViewOptions): Highlights
     /** The highlights that the message on screen can add again. */
     let undo: { batch: HighlightRecord[]; message: ToastOptions } | null = null
 
+    function notPutBack(): void {
+        const message: ToastOptions = { message: HIGHLIGHT_UNDO_ERROR, tone: 'error' }
+        // The Undo can be on screen as a toast of the app after the reader closed the book.
+        // The notice of a panel that is gone shows nothing.
+        if (dialog.isConnected) notice.show(message)
+        else showToast(message)
+    }
+
     async function restore(batch: HighlightRecord[]): Promise<void> {
         // The batch is emptied first, so a second run of the action adds nothing.
         for (const record of batch.splice(0)) {
+            let isBack = false
             try {
-                await session.addHighlight({
+                const added = await session.addHighlight({
                     range: { spineIndex: record.spineIndex, start: record.start, end: record.end },
                     text: record.text,
                     color: record.color,
                     ...(record.note ? { note: record.note } : {}),
                 })
+                // A record that the session does not have is not in storage.
+                isBack = session.highlights.some((highlight) => highlight.id === added.id)
             } catch {
-                notice.show({ message: 'The highlight was not added again.', tone: 'error' })
+                // Storage did not write, or the book is closed.
             }
+            if (!isBack) notPutBack()
         }
     }
 

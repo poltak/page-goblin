@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SelectionInfo } from '$lib/reader/types'
 import type { HighlightRecord } from '$lib/storage/types'
@@ -11,6 +13,7 @@ import {
     HELD_SETTLE_MS,
     HIGHLIGHT_REMOVE_ERROR,
     HIGHLIGHT_SAVE_ERROR,
+    HIGHLIGHT_UNDO_ERROR,
     RELEASE_SETTLE_MS,
     SELECTION_SETTLE_MS,
     createSelectionTools,
@@ -150,6 +153,22 @@ afterEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
     vi.useRealTimers()
+})
+
+// jsdom has no layout, so this test reads the source text. It keeps the rule in its file.
+describe('the stylesheet of the note dialog', () => {
+    const css = readFileSync(join(import.meta.dirname, 'selection.css'), 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/\s+/g, ' ')
+
+    // The keyboard of a phone covers the buttons of a dialog in the middle of the screen.
+    it('puts the note dialog near the top on a touch screen', () => {
+        const touch = css.slice(css.indexOf('@media (pointer: coarse) {'))
+
+        expect(touch).toMatch(
+            /^@media \(pointer: coarse\) \{ \.note-dialog \{ margin-top: [^;]+; \} \}/,
+        )
+    })
 })
 
 describe('the selection toolbar', () => {
@@ -581,6 +600,104 @@ describe('the selection toolbar', () => {
     })
 })
 
+// The toolbar is the last element in the order of the Tab key, after each link of the book.
+describe('the Tab key and the selection toolbar', () => {
+    function tab(init: KeyboardEventInit = {}, target: EventTarget = document.body) {
+        const event = new KeyboardEvent('keydown', {
+            key: 'Tab',
+            bubbles: true,
+            cancelable: true,
+            ...init,
+        })
+        target.dispatchEvent(event)
+        return event
+    }
+
+    const inBar = () => selectionBar().contains(document.activeElement)
+
+    it('moves the focus from the page to the last colour of the open toolbar', () => {
+        tools.destroy()
+        localStorage.setItem(HIGHLIGHT_COLOR_KEY, 'blue')
+        mount()
+        showSelection()
+
+        const event = tab()
+
+        expect(document.activeElement).toBe(button(selectionBar(), '[data-color="blue"]'))
+        expect(event.defaultPrevented).toBe(true)
+        expect(isOpen(selectionBar())).toBe(true)
+    })
+
+    it('adds the highlight for the Enter key on that button, and gives the focus back', async () => {
+        showSelection()
+        tab()
+
+        // Enter on a button gives a click with no press before it.
+        ;(document.activeElement as HTMLElement).click()
+        await flush()
+
+        expect(fake.addHighlight).toHaveBeenCalledTimes(1)
+        expect(fake.addHighlight).toHaveBeenCalledWith({
+            range: { spineIndex: 2, start: 100, end: 128 },
+            text: TEXT,
+            color: 'yellow',
+        })
+        expect(isOpen(selectionBar())).toBe(false)
+        // A hidden button that keeps the focus would also keep the keys from the page.
+        expect(inBar()).toBe(false)
+    })
+
+    it('leaves the key to the browser when no toolbar is open', () => {
+        expect(tab().defaultPrevented).toBe(false)
+        expect(inBar()).toBe(false)
+
+        // The toolbar waits for the end of the selection.
+        fake.emit('selection', selection())
+        expect(tab().defaultPrevented).toBe(false)
+        expect(inBar()).toBe(false)
+    })
+
+    it('leaves the key to the browser when the focus is in the toolbar', () => {
+        showSelection()
+        tab()
+        const focused = document.activeElement!
+
+        expect(tab({}, focused).defaultPrevented).toBe(false)
+        expect(document.activeElement).toBe(focused)
+    })
+
+    it.each([{ shiftKey: true }, { ctrlKey: true }, { altKey: true }, { metaKey: true }])(
+        'leaves the key with %j to the browser',
+        (init) => {
+            showSelection()
+
+            expect(tab(init).defaultPrevented).toBe(false)
+            expect(inBar()).toBe(false)
+        },
+    )
+
+    it('does not go to the toolbar of a highlight, which a tap opens', () => {
+        tools.destroy()
+        mount([makeHighlight()])
+        tapHighlight(makeHighlight())
+
+        expect(tab().defaultPrevented).toBe(false)
+        expect(editBar().contains(document.activeElement)).toBe(false)
+    })
+
+    it('takes the focus out of the toolbar when Escape closes it', () => {
+        showSelection()
+        tab()
+
+        document.activeElement!.dispatchEvent(
+            new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+        )
+
+        expect(isOpen(selectionBar())).toBe(false)
+        expect(inBar()).toBe(false)
+    })
+})
+
 describe('hiding the toolbars', () => {
     it('hides on Escape and keeps the key from the rest of the page', () => {
         const onKey = vi.fn()
@@ -804,6 +921,88 @@ describe('the toolbar of a highlight', () => {
 
         expect(toastText()).toBe(HIGHLIGHT_REMOVE_ERROR)
         expect(toast()!.querySelector('button')).toBeNull()
+    })
+
+    it('shows no error after an Undo that put the highlight back', async () => {
+        tapHighlight(plain)
+        click(button(editBar(), '[data-action="remove"]'))
+        await flush()
+
+        toast()!.querySelector('button')!.click()
+        await flush()
+        vi.advanceTimersByTime(TOAST_LEAVE_MS)
+
+        expect(fake.session.highlights.map((item) => item.id)).toEqual(['h2', 'new-1'])
+        expect(toast()).toBeNull()
+    })
+
+    it('says when the Undo did not put the highlight back, because storage did not write', async () => {
+        tapHighlight(plain)
+        click(button(editBar(), '[data-action="remove"]'))
+        await flush()
+        fake.state.failWrites = true
+
+        toast()!.querySelector('button')!.click()
+        await flush()
+        vi.advanceTimersByTime(TOAST_LEAVE_MS)
+
+        expect(toastText()).toBe(HIGHLIGHT_UNDO_ERROR)
+        expect(HIGHLIGHT_UNDO_ERROR).toBe('The highlight was not put back.')
+        expect(toast()!.classList.contains('toast-error')).toBe(true)
+        expect(toast()!.querySelector('button')).toBeNull()
+    })
+
+    // The toast is in the app shell, so it stays on screen when the reader closes the book.
+    it('says when the Undo comes after the reader closed the book', async () => {
+        tapHighlight(noted)
+        click(button(editBar(), '[data-action="remove"]'))
+        await flush()
+        tools.destroy()
+        // The session of a closed book stores nothing and rejects.
+        fake.addHighlight.mockImplementationOnce(async () => {
+            throw new Error('The book is closed, so the highlight was not saved.')
+        })
+
+        toast()!.querySelector('button')!.click()
+        await flush()
+        vi.advanceTimersByTime(TOAST_LEAVE_MS)
+
+        expect(fake.addHighlight).toHaveBeenCalledTimes(1)
+        expect(fake.session.highlights.map((item) => item.id)).toEqual(['h1'])
+        expect(toastText()).toBe(HIGHLIGHT_UNDO_ERROR)
+        expect(toast()!.classList.contains('toast-error')).toBe(true)
+    })
+
+    it('says when the Undo gives a record that the session did not store', async () => {
+        tapHighlight(noted)
+        click(button(editBar(), '[data-action="remove"]'))
+        await flush()
+        fake.addHighlight.mockImplementationOnce(async () => makeHighlight({ id: 'not-stored' }))
+
+        toast()!.querySelector('button')!.click()
+        await flush()
+        vi.advanceTimersByTime(TOAST_LEAVE_MS)
+
+        expect(fake.session.highlights.map((item) => item.id)).toEqual(['h1'])
+        expect(toastText()).toBe(HIGHLIGHT_UNDO_ERROR)
+    })
+
+    it('shows one message when the Undo put no highlight of two back', async () => {
+        tapHighlight(plain)
+        click(button(editBar(), '[data-action="remove"]'))
+        await flush()
+        tapHighlight(noted)
+        click(button(editBar(), '[data-action="remove"]'))
+        await flush()
+        fake.state.failWrites = true
+
+        toast()!.querySelector('button')!.click()
+        await flush()
+        vi.advanceTimersByTime(TOAST_LEAVE_MS)
+
+        expect(fake.addHighlight).toHaveBeenCalledTimes(2)
+        expect(document.querySelectorAll('#toasts .toast')).toHaveLength(1)
+        expect(toastText()).toBe(HIGHLIGHT_UNDO_ERROR)
     })
 
     it('adds two highlights again when both were removed in the time of one toast', async () => {

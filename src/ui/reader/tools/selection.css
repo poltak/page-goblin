@@ -83,6 +83,17 @@ dialog.note-dialog[open] {
     pointer-events: auto;
 }
 
+/*
+ * The keyboard of a phone or a tablet covers the lower part of the screen. The dialog is near
+ * the top on such a device, so its buttons stay above the keyboard. Its bottom margin stays
+ * automatic.
+ */
+@media (pointer: coarse) {
+    .note-dialog {
+        margin-top: max(var(--space-6), calc(var(--safe-top) + var(--space-4)));
+    }
+}
+
 .note-dialog-quote {
     display: -webkit-box;
     margin-top: var(--space-3);

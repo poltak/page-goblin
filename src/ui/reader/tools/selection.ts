@@ -52,6 +52,7 @@ export const SEARCH_QUERY_MAX = 80
 
 export const HIGHLIGHT_SAVE_ERROR = 'The highlight was not saved.'
 export const HIGHLIGHT_REMOVE_ERROR = 'The highlight was not removed.'
+export const HIGHLIGHT_UNDO_ERROR = 'The highlight was not put back.'
 
 const SWATCHES = HIGHLIGHT_COLORS.map(
     (color) =>
@@ -209,6 +210,9 @@ export function createSelectionTools(options: SelectionToolsOptions): Part {
         clearShowTimer()
         current = null
         hideAfterPress = false
+        // A hidden button that keeps the focus would also keep the keys from the page.
+        const focused = document.activeElement
+        if (focused instanceof HTMLElement && selectionBar.contains(focused)) focused.blur()
         setFloatOpen(selectionBar, false)
         closeEditBar()
     }
@@ -338,10 +342,22 @@ export function createSelectionTools(options: SelectionToolsOptions): Part {
         }
     }
 
-    function addAgain({ spineIndex, start, end, text, color, note }: HighlightRecord): void {
-        session
-            .addHighlight({ range: { spineIndex, start, end }, text, color, note })
-            .catch(saveFailed)
+    /** The Undo of a removal. The toast can be on screen after the reader closed the book. */
+    async function addAgain(removed: HighlightRecord): Promise<void> {
+        const { spineIndex, start, end, text, color, note } = removed
+        try {
+            const added = await session.addHighlight({
+                range: { spineIndex, start, end },
+                text,
+                color,
+                note,
+            })
+            // A record that the session does not have is not in storage.
+            if (session.highlights.some((highlight) => highlight.id === added.id)) return
+        } catch {
+            // Storage did not write, or the book is closed.
+        }
+        showToast({ message: HIGHLIGHT_UNDO_ERROR, tone: 'error' })
     }
 
     async function removeHighlight(highlight: HighlightRecord): Promise<void> {
@@ -365,7 +381,7 @@ export function createSelectionTools(options: SelectionToolsOptions): Part {
             message: 'Highlight removed',
             action: {
                 label: 'Undo',
-                onSelect: () => batch.splice(0).forEach(addAgain),
+                onSelect: () => batch.splice(0).forEach((removed) => void addAgain(removed)),
             },
         })
     }
@@ -508,6 +524,23 @@ export function createSelectionTools(options: SelectionToolsOptions): Part {
         buttons[next].focus()
     }
 
+    /**
+     * The Tab key goes from the page to the open selection toolbar. The toolbar is after each
+     * link of the book in the order of the Tab key, so the keyboard does not get to it without
+     * this. Enter then adds a highlight in the colour that the user chose last.
+     */
+    function focusSelectionBar(event: KeyboardEvent): void {
+        if (event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return
+        if (!current || !isFloatOpen(selectionBar)) return
+        if (selectionBar.contains(document.activeElement)) return
+        const swatch =
+            selectionBar.querySelector<HTMLElement>('[aria-pressed="true"]') ??
+            qs('button', selectionBar)
+        swatch.focus({ preventScroll: true })
+        // Below an open dialog the toolbar takes no focus, and the key stays with the dialog.
+        if (document.activeElement === swatch) event.preventDefault()
+    }
+
     const stops = [
         session.on('selection', onSelection),
         session.on('highlight-tap', ({ highlight, bounds }) => {
@@ -547,6 +580,7 @@ export function createSelectionTools(options: SelectionToolsOptions): Part {
             document,
             'keydown',
             (event) => {
+                if (event.key === 'Tab') focusSelectionBar(event)
                 if (event.key !== 'Escape') return
                 if (!isFloatOpen(selectionBar) && !isFloatOpen(editBar)) return
                 dismiss()

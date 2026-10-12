@@ -4,7 +4,7 @@ import { clearToasts } from '../../app/toast'
 import type { ContentsPanel, ContentsTab } from '../parts'
 import type { TocEntry } from '../types'
 import { createContentsPanel } from './contents'
-import { fileNameStem } from './contents-highlights'
+import { fileNameStem, HIGHLIGHT_UNDO_ERROR } from './contents-highlights'
 import { TOC_LONG_LIST, TOC_ROWS_PER_STEP } from './contents-toc'
 import {
     createFakeSession,
@@ -1182,7 +1182,46 @@ describe('the Highlights tab', () => {
             undoButton().click()
             await settle()
 
-            expect(notice()!.textContent).toBe('The highlight was not added again.')
+            expect(notice()!.textContent).toBe(HIGHLIGHT_UNDO_ERROR)
+            expect(HIGHLIGHT_UNDO_ERROR).toBe('The highlight was not put back.')
+            expect(notice()!.classList.contains('toast-error')).toBe(true)
+        })
+
+        it('shows a message when the session gives a record that it did not store', async () => {
+            mount({ highlights: [plain] }).open('highlights')
+            await removeRow(0)
+            session.addHighlight.mockResolvedValueOnce(makeHighlight({ id: 'not-stored' }))
+
+            undoButton().click()
+            await settle()
+
+            expect(rows('highlights')).toHaveLength(0)
+            expect(notice()!.textContent).toBe(HIGHLIGHT_UNDO_ERROR)
+        })
+
+        // The Undo is a toast of the app after the sheet closed, and it stays on screen when
+        // the reader closes the book. The notice of the panel shows nothing then.
+        it('says in a toast of the app when the Undo comes after the reader closed the book', async () => {
+            const contents = mount({ highlights: [plain] })
+            contents.open('highlights')
+            await removeRow(0)
+            contents.close()
+            const undo = appToast()!.querySelector('button')!
+            contents.destroy()
+            panel = null
+            // The session of a closed book stores nothing and rejects.
+            session.addHighlight.mockRejectedValueOnce(
+                new Error('The book is closed, so the highlight was not saved.'),
+            )
+
+            undo.click()
+
+            // The toast with the Undo leaves first.
+            await vi.waitFor(() => {
+                expect(appToast()?.querySelector('span')?.textContent).toBe(HIGHLIGHT_UNDO_ERROR)
+            })
+            expect(appToast()!.classList.contains('toast-error')).toBe(true)
+            expect(session.addHighlight).toHaveBeenCalledTimes(1)
         })
     })
 
