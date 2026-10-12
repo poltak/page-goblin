@@ -54,7 +54,10 @@ export interface HighlightMark {
 }
 
 export interface RelocateInfo {
-    /** The first visible character. This is the position to save as progress. */
+    /**
+     * The first visible character. This is the position to save as progress. The offset can be
+     * equal to `chapterLength` when no text is at or after the visible position.
+     */
     locator: Locator
     /**
      * The text that is visible now in the chapter of `locator`. In the scroll view, when two
@@ -107,7 +110,10 @@ export interface ReaderViewCallbacks {
     onHighlightTap(id: string, bounds: DOMRect): void
     /** A tap or click on a link. The view does not follow links itself. */
     onLink(target: LinkTarget): void
-    /** A tap or click on an image. `src` is an object URL that stays valid while the chapter is shown. */
+    /**
+     * A tap or click on an image. `src` is an object URL or a data URL. An object URL stays
+     * valid while the chapter is shown.
+     */
     onImageTap(image: { src: string; alt: string }): void
     /** A chapter did not load, or another error that the user must see. */
     onError(error: unknown): void

@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+        <title>Reader view test page</title>
+        <link rel="stylesheet" href="/src/styles/app.css" />
+        <style>
+            html,
+            body {
+                height: 100%;
+                margin: 0;
+                overflow: hidden;
+            }
+            body {
+                background: var(--rd-bg);
+                color: var(--fg);
+            }
+            #stage {
+                position: fixed;
+                inset: 0 0 var(--dev-bar-height, 0px) 0;
+                background: var(--rd-bg);
+            }
+            #dev-bar {
+                position: fixed;
+                inset: auto 0 0 0;
+                height: var(--dev-bar-height);
+                box-sizing: border-box;
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                padding: 0 8px;
+                overflow-x: auto;
+                white-space: nowrap;
+                font:
+                    12px/1.2 system-ui,
+                    sans-serif;
+                background: var(--surface);
+                border-top: 1px solid var(--border-strong);
+            }
+            #dev-bar button,
+            #dev-bar select {
+                font: inherit;
+                height: 28px;
+                padding: 0 8px;
+            }
+            #dev-info {
+                font-variant-numeric: tabular-nums;
+                color: var(--fg-muted);
+            }
+            #dev-error {
+                color: var(--danger);
+            }
+        </style>
+    </head>
+    <body style="--dev-bar-height: 44px">
+        <div id="stage"></div>
+        <div id="dev-bar">
+            <button type="button" id="dev-prev">Previous</button>
+            <button type="button" id="dev-next">Next</button>
+            <select id="dev-mode" aria-label="Mode">
+                <option value="paged">Paged</option>
+                <option value="scroll">Scroll</option>
+            </select>
+            <select id="dev-theme" aria-label="Theme">
+                <option value="light">Light</option>
+                <option value="sepia">Sepia</option>
+                <option value="dark">Dark</option>
+                <option value="black">Black</option>
+            </select>
+            <button type="button" id="dev-font-minus" aria-label="Smaller text">A-</button>
+            <button type="button" id="dev-font-plus" aria-label="Larger text">A+</button>
+            <select id="dev-margin" aria-label="Margin">
+                <option value="narrow">Narrow margin</option>
+                <option value="normal">Normal margin</option>
+                <option value="wide">Wide margin</option>
+            </select>
+            <select id="dev-columns" aria-label="Columns">
+                <option value="auto">Auto columns</option>
+                <option value="1">1 column</option>
+                <option value="2">2 columns</option>
+            </select>
+            <span id="dev-info">Loading</span>
+            <span id="dev-error"></span>
+        </div>
+        <script type="module" src="./reader-harness.ts"></script>
+    </body>
+</html>

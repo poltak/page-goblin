@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Reader self test matrix</title>
+        <style>
+            body {
+                margin: 12px;
+                font:
+                    13px/1.4 ui-monospace,
+                    Menlo,
+                    monospace;
+            }
+            iframe {
+                position: fixed;
+                left: 0;
+                top: 0;
+                border: 0;
+                background: #fff;
+            }
+            pre {
+                white-space: pre-wrap;
+            }
+        </style>
+    </head>
+    <body>
+        <!--
+            Runs the self test of dev/reader.html for a list of books and modes, one frame at a
+            time. URL parameters: books and modes (lists with commas), size (for example
+            375x812), extra (more parameters for the reader page), sweep (a number of pages:
+            the paged view also turns that many pages from the start of the book and looks at
+            each page), fresh (1 forgets the stored results). The results stay in localStorage,
+            so a page reload continues the run.
+        -->
+        <pre id="report">Starting</pre>
+        <script>
+            ;(function () {
+                var params = new URLSearchParams(location.search)
+                var books = (
+                    params.get('books') ||
+                    'quick-start.epub,anna-karenina.epub,hail-mary.epub,tao-of-pooh.epub,my-view.epub'
+                ).split(',')
+                var modes = (params.get('modes') || 'paged,scroll').split(',')
+                var size = (params.get('size') || innerWidth + 'x' + innerHeight)
+                    .split('x')
+                    .map(Number)
+                var extra = params.get('extra') || ''
+                var sweep = Number(params.get('sweep')) || 0
+                var key = 'rd-matrix:' + [books, modes, size, extra, sweep].join('|')
+                if (params.get('fresh') === '1') {
+                    localStorage.removeItem(key)
+                    // A reload of the page must continue the run, not start it again.
+                    params.delete('fresh')
+                    history.replaceState(null, '', location.pathname + '?' + params)
+                }
+
+                var results = JSON.parse(localStorage.getItem(key) || '{}')
+                var report = document.getElementById('report')
+                var done = false
+
+                function wait(ms) {
+                    return new Promise(function (resolve) {
+                        setTimeout(resolve, ms)
+                    })
+                }
+
+                function text() {
+                    var lines = Object.keys(results).map(function (name) {
+                        var result = results[name]
+                        return (
+                            name +
+                            ' ' +
+                            result.ms +
+                            'ms ready=' +
+                            result.ready +
+                            ' frames=' +
+                            result.frames +
+                            (result.error ? ' ERROR ' + result.error : '') +
+                            ' failures=' +
+                            JSON.stringify(result.failures) +
+                            (result.sweep ? ' sweep=' + JSON.stringify(result.sweep) : '')
+                        )
+                    })
+                    lines.push(done ? 'done' : 'running')
+                    return lines.join('\n')
+                }
+
+                async function runOne(book, mode) {
+                    var frame = document.createElement('iframe')
+                    frame.style.width = size[0] + 'px'
+                    frame.style.height = size[1] + 'px'
+                    frame.src =
+                        'reader.html?book=' +
+                        encodeURIComponent(book) +
+                        '&mode=' +
+                        mode +
+                        '&motion=0' +
+                        extra
+                    document.body.appendChild(frame)
+                    var start = performance.now()
+                    var result = { ms: 0, ready: null, frames: null, failures: null, error: null }
+                    try {
+                        for (var i = 0; i < 600; i++) {
+                            var page = frame.contentWindow
+                            if (page && page.harness && page.harness.timings.ready) break
+                            var line =
+                                frame.contentDocument &&
+                                frame.contentDocument.getElementById('dev-error')
+                            if (line && line.textContent) throw new Error(line.textContent)
+                            await wait(50)
+                        }
+                        var harness = frame.contentWindow.harness
+                        if (!harness) throw new Error('The reader page did not start.')
+                        result.ready = harness.timings.ready
+                        result.failures = await Promise.race([
+                            harness.selfTest(),
+                            wait(120000).then(function () {
+                                return ['No result after 120 seconds.']
+                            }),
+                        ])
+                        result.frames = harness.stage.querySelectorAll('[data-rd-frame]').length
+                        if (sweep && mode === 'paged') {
+                            await harness.view.goTo({ spineIndex: 0, offset: 0 })
+                            result.sweep = await harness.sweep(sweep)
+                        }
+                    } catch (error) {
+                        result.error = String(error)
+                    }
+                    result.ms = Math.round(performance.now() - start)
+                    frame.remove()
+                    return result
+                }
+
+                async function run() {
+                    for (var b = 0; b < books.length; b++) {
+                        for (var m = 0; m < modes.length; m++) {
+                            var name = books[b] + ' ' + modes[m] + ' ' + size.join('x')
+                            if (results[name]) continue
+                            results[name] = await runOne(books[b], modes[m])
+                            localStorage.setItem(key, JSON.stringify(results))
+                            report.textContent = text()
+                        }
+                    }
+                    done = true
+                    report.textContent = text()
+                }
+
+                window.matrixReport = text
+                run()
+            })()
+        </script>
+    </body>
+</html>
