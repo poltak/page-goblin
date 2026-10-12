@@ -738,3 +738,52 @@ main().catch((error: unknown) => {
     const line = document.getElementById('dev-error')
     if (line) line.textContent = String(error)
 })
+
+/**
+ * With `debug=pointer` in the URL, a line at the top counts the pointer and touch events of the
+ * page. A phone has no console, and touch faults do not show in a desktop browser.
+ */
+function showPointerDebug(): void {
+    const line = document.createElement('div')
+    line.style.cssText =
+        'position:fixed;top:0;left:0;right:0;z-index:99;padding:50px 8px 4px;font:11px/1.3 ui-monospace,monospace;background:#000c;color:#fff;pointer-events:none;white-space:pre-wrap'
+    document.body.append(line)
+    const counts: Record<string, number> = {}
+    let last = ''
+    const render = (): void => {
+        const selection = document.getSelection()
+        line.textContent =
+            Object.entries(counts)
+                .map(([type, count]) => `${type}:${count}`)
+                .join(' ') +
+            `\n${last}\nselection: ${selection?.type ?? 'none'} ranges ${selection?.rangeCount ?? 0}`
+    }
+    for (const type of [
+        'pointerdown',
+        'pointermove',
+        'pointerup',
+        'pointercancel',
+        'touchstart',
+        'touchmove',
+        'touchend',
+        'touchcancel',
+        'gotpointercapture',
+        'lostpointercapture',
+    ]) {
+        window.addEventListener(
+            type,
+            (event) => {
+                counts[type] = (counts[type] ?? 0) + 1
+                if (event instanceof PointerEvent && type !== 'pointermove') {
+                    const target = event.composedPath()[0]
+                    last = `${type} type=${event.pointerType || '(empty)'} primary=${event.isPrimary} button=${event.button} x=${Math.round(event.clientX)} target=${target instanceof Element ? target.localName : String(target)}`
+                }
+                render()
+            },
+            { capture: true, passive: true },
+        )
+    }
+    render()
+}
+
+if (new URLSearchParams(location.search).get('debug') === 'pointer') showPointerDebug()

@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Add a test book</title>
+    </head>
+    <body>
+        <!--
+            Dev only. Adds books from /local-books/ to the library of this browser, for a device
+            that has no EPUB files (a phone simulator). Example:
+            /dev/add-book.html?book=hail-mary.epub&book=quick-start.epub&open=1
+        -->
+        <pre id="log">Adding books.</pre>
+        <script type="module" src="./add-book.ts"></script>
+    </body>
+</html>
