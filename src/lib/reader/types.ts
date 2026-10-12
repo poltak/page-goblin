@@ -79,7 +79,21 @@ export interface SelectionInfo {
 }
 
 export type LinkTarget =
-    | { kind: 'internal'; path: string; fragment: string | null; spineIndex: number }
+    | {
+          kind: 'internal'
+          path: string
+          fragment: string | null
+          /** Index into the spine, or -1 when the target is not a spine document. */
+          spineIndex: number
+          /**
+           * True when the link looks like a note reference: `epub:type` has "noteref", or the
+           * link is in a `sup` element, or its text is a short number or note mark. The reader
+           * screen then shows the note in a popover and does not leave the page.
+           */
+          noteref: boolean
+          /** Bounding box of the link in viewport coordinates. */
+          bounds: DOMRect
+      }
     | { kind: 'external'; url: string }
 
 export interface ReaderViewCallbacks {
@@ -131,6 +145,11 @@ export interface ReaderView {
      * not visible, the view turns the page or scrolls to it. Null removes the marker.
      */
     setActiveRange(range: TextRange | null, options?: { follow?: boolean }): void
+    /**
+     * Mark the matches of a search in the chapters that are mounted, now and later. An empty list
+     * removes the marks. The view does not move; use `goTo` to show a match.
+     */
+    setSearchRanges(ranges: readonly TextRange[]): void
     clearSelection(): void
     /** Remove all DOM and listeners. The view cannot be used after this. */
     destroy(): void
