@@ -1,9 +1,18 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
     <rect width="512" height="512" fill="#22201c" />
     <!-- A launcher can cut all but the central 80 percent, so the drawing is smaller here. -->
-    <g transform="translate(51.2 51.2) scale(0.8)">
-        <path fill="#fbfaf8" d="M244 172C208 146 150 140 96 152v200c54-12 112-6 148 20z" />
-        <path fill="#fbfaf8" d="M268 172c36-26 94-32 148-20v200c-54-12-112-6-148 20z" />
-        <path fill="#b4552d" d="M330 124h44v140l-22-20-22 20z" />
+    <g transform="translate(64 64) scale(0.75)">
+        <g transform="translate(0 44)">
+            <path fill="#8aa34f" d="M152 146Q84 118 26 58q10 112 114 144z" />
+            <path fill="#8aa34f" d="M360 146q68-28 126-88-10 112-114 144z" />
+            <path fill="#8aa34f" d="M140 172c0-64 52-102 116-102s116 38 116 102z" />
+            <ellipse cx="212" cy="122" rx="20" ry="24" fill="#fbfaf8" />
+            <ellipse cx="300" cy="122" rx="20" ry="24" fill="#fbfaf8" />
+            <circle cx="215" cy="132" r="10" fill="#22201c" />
+            <circle cx="297" cy="132" r="10" fill="#22201c" />
+            <path fill="#fbfaf8" d="M244 172C208 146 150 140 96 152v200c54-12 112-6 148 20z" />
+            <path fill="#fbfaf8" d="M268 172c36-26 94-32 148-20v200c-54-12-112-6-148 20z" />
+            <path fill="#b4552d" d="M336 150h40v118l-20-18-20 18z" />
+        </g>
     </g>
 </svg>
