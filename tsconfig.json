@@ -4,7 +4,7 @@
         "module": "ESNext",
         "moduleResolution": "bundler",
         "lib": ["ES2023", "DOM", "DOM.Iterable"],
-        "types": ["svelte", "vite/client", "node"],
+        "types": ["vite/client", "node"],
         "allowJs": true,
         "checkJs": true,
         "esModuleInterop": true,
@@ -12,6 +12,7 @@
         "isolatedModules": true,
         "noEmit": true,
         "noImplicitAny": true,
+        "noUncheckedIndexedAccess": false,
         "resolveJsonModule": true,
         "skipLibCheck": true,
         "sourceMap": true,
@@ -22,12 +23,5 @@
             "$lib/*": ["./src/lib/*"]
         }
     },
-    "include": [
-        "src/**/*.ts",
-        "src/**/*.js",
-        "src/**/*.svelte",
-        "scripts/**/*.ts",
-        "*.config.ts",
-        "*.config.js"
-    ]
+    "include": ["src/**/*.ts", "src/**/*.js", "scripts/**/*.ts", "*.config.ts", "*.config.js"]
 }
