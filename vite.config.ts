@@ -1,9 +1,18 @@
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitest/config'
 // Vite warns about a config import with no file extension. TypeScript maps .js to the .ts file.
 import { pwaPlugin } from './build/pwa-plugin.js'
 
+const packageJson = JSON.parse(
+    readFileSync(new URL('./package.json', import.meta.url), 'utf8'),
+) as { version: string }
+
 export default defineConfig({
+    define: {
+        // The About dialog shows this.
+        'import.meta.env.VITE_APP_VERSION': JSON.stringify(packageJson.version),
+    },
     // A relative base lets the same build run from any GitHub Pages path.
     base: './',
     plugins: [pwaPlugin()],

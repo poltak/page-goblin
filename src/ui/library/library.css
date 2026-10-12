@@ -1,0 +1,473 @@
+/*
+ * The library screen. Class selectors only, because this file is not in a cascade layer and
+ * wins over each component rule.
+ *
+ * The page scrolls, not an element in the view. The address bar of a phone browser can then
+ * collapse, and the header stays at the top with position: sticky.
+ */
+
+.library {
+    --library-max: 1200px;
+    --library-pad: var(--space-4);
+
+    display: flex;
+    flex-direction: column;
+    min-height: 100dvh;
+}
+
+/* ---------- Header ---------- */
+
+.library-header {
+    position: sticky;
+    top: 0;
+    z-index: var(--z-sticky);
+    padding-inline: max(var(--library-pad), var(--safe-left))
+        max(var(--library-pad), var(--safe-right));
+}
+
+.library-bar {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    gap: var(--space-1);
+    min-width: 0;
+    max-width: var(--library-max);
+    margin-inline: auto;
+}
+
+.library-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: var(--text-xl);
+    font-weight: var(--weight-semibold);
+    letter-spacing: -0.015em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.library-add {
+    margin-inline-end: var(--space-1);
+}
+
+/* The icon of the last button lines up with the edge of the content below. */
+.library-bar > .icon-btn:last-child {
+    margin-inline-end: calc(var(--space-3) * -1);
+}
+
+/* The label does not fit next to the name on a small phone. The icon stays. */
+@media (max-width: 379px) {
+    .library-add {
+        width: var(--control-h);
+        padding: 0;
+
+        & > span {
+            display: none;
+        }
+
+        & > .icon:first-child:not(:only-child) {
+            margin-inline-start: 0;
+        }
+    }
+}
+
+/* ---------- Body ---------- */
+
+.library-body {
+    flex: 1 1 auto;
+    width: 100%;
+    max-width: calc(var(--library-max) + var(--library-pad) * 2);
+    margin-inline: auto;
+    padding: var(--space-4) max(var(--library-pad), var(--safe-right))
+        calc(var(--space-16) + var(--safe-bottom)) max(var(--library-pad), var(--safe-left));
+}
+
+.library-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-2) var(--space-3);
+    margin-bottom: var(--space-4);
+}
+
+.library-search {
+    position: relative;
+    grid-column: 1 / -1;
+}
+
+/*
+ * Only some browsers give a search field a clear button, and a phone browser gives none. The
+ * field has its own button, so the one of the browser must not show next to it.
+ */
+.library-search .input {
+    padding-inline-end: var(--space-10);
+
+    &::-webkit-search-cancel-button {
+        display: none;
+    }
+}
+
+.library-search-clear {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-end: var(--space-1);
+    margin-block: auto;
+
+    /* The ring stays in the button, or it would lie on the border of the field. */
+    &:focus-visible {
+        outline-offset: -2px;
+    }
+}
+
+.library-count {
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+}
+
+.library-sort {
+    width: auto;
+}
+
+@media (min-width: 600px) {
+    .library-toolbar {
+        grid-template-columns: minmax(0, 320px) minmax(0, 1fr) auto;
+    }
+
+    .library-search {
+        grid-column: auto;
+    }
+
+    .library-count {
+        text-align: end;
+    }
+}
+
+/* ---------- Grid ---------- */
+
+/*
+ * Two columns on a very small phone, three from 340px, then as many as fit. A card has 8px of
+ * padding, so the grid goes 8px into the page padding and the covers line up with the header.
+ */
+.library-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin: 0 calc(var(--space-2) * -1);
+    padding: 0;
+    list-style: none;
+}
+
+@media (min-width: 340px) {
+    .library-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+@media (min-width: 520px) {
+    .library-grid {
+        grid-template-columns: repeat(auto-fill, minmax(var(--book-col), 1fr));
+    }
+}
+
+.library-grid > .book-card {
+    /* The sticky header must not cover a card that the page scrolls to. */
+    scroll-margin-top: calc(var(--toolbar-h) + var(--safe-top) + var(--space-4));
+}
+
+/*
+ * In the narrow columns below 600px, a bar next to the percent is only some 30px long. There
+ * the bar gets the full width of the card, above the percent.
+ */
+@media (max-width: 599px) {
+    .library-grid .book-card-foot {
+        flex-wrap: wrap;
+        row-gap: var(--space-1);
+        padding-top: var(--space-2);
+    }
+
+    .library-grid .book-card-foot > .progress {
+        flex-basis: 100%;
+    }
+}
+
+/*
+ * The edge of a cover. The outline of .book-cover is painted below the image, because the
+ * image has a position, so a white cover has no edge on a light page. This ring is above the
+ * image. A part of the text colour shows on a cover that is near to the page colour, and it
+ * does not show on a cover that is dark on a light page or light on a dark page.
+ */
+.library-grid .book-cover,
+.details-cover {
+    outline: 0;
+}
+
+.library-grid .book-cover::after,
+.details-cover::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border: 1px solid color-mix(in srgb, var(--fg) 20%, transparent);
+    border-radius: inherit;
+    pointer-events: none;
+}
+
+/* A cover that is not loaded shows an empty tile, so the title does not flash before it. */
+.book-card[data-cover='pending'] .book-cover-fallback,
+.book-card[data-cover='shown'] .book-cover-fallback {
+    visibility: hidden;
+}
+
+.library-grid .book-cover > img {
+    opacity: 0;
+    transition: opacity var(--dur-base) var(--ease-out);
+}
+
+.book-card[data-cover='shown'] .book-cover > img {
+    opacity: 1;
+}
+
+/* A card that the app points at: a new book, or the book of a file that was added before. */
+.book-card.is-marked::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border: 2px solid var(--accent);
+    border-radius: inherit;
+    pointer-events: none;
+    animation: library-mark 2s var(--ease-out) both;
+}
+
+@keyframes library-mark {
+    0%,
+    70% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 0;
+    }
+}
+
+/* Without the fade, the mark shows until the script removes it. */
+@media (prefers-reduced-motion: reduce) {
+    .book-card.is-marked::before {
+        animation: none;
+    }
+}
+
+.library-no-match {
+    padding-block: var(--space-10);
+}
+
+.library-sources {
+    margin-top: var(--space-4);
+    font-size: var(--text-sm);
+}
+
+/* A touch screen has no file drag. */
+@media (hover: none) {
+    .library-drop-hint {
+        display: none;
+    }
+}
+
+/* ---------- Import status ---------- */
+
+.import-status,
+.import-failures {
+    display: grid;
+    gap: var(--space-3);
+}
+
+/* The same space to the grid as below the toolbar, and no space while the region is empty. */
+.import-status:has(> .import-current:not([hidden]), .import-failure) {
+    margin-bottom: var(--space-4);
+}
+
+.import-failures:empty {
+    display: none;
+}
+
+.import-current,
+.import-failure {
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+}
+
+.import-current {
+    display: grid;
+    gap: var(--space-2);
+}
+
+.import-file,
+.import-failure-file {
+    font-weight: var(--weight-medium);
+    overflow-wrap: anywhere;
+}
+
+.import-progress-text {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-3);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+}
+
+.import-failures {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.import-failure {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+    border-color: var(--danger);
+
+    & > .icon {
+        margin-top: calc(var(--space-1) / 2);
+        color: var(--danger);
+    }
+
+    & > .icon-btn {
+        margin: calc(var(--space-2) * -1) calc(var(--space-2) * -1) 0 0;
+    }
+}
+
+.import-failure-body {
+    display: grid;
+    flex: 1 1 auto;
+    gap: var(--space-1);
+    min-width: 0;
+}
+
+.import-failure-message,
+.import-failure-details {
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+}
+
+.import-failure-details > summary {
+    cursor: pointer;
+}
+
+.import-failure-detail {
+    margin-top: var(--space-1);
+    overflow-wrap: anywhere;
+}
+
+/* ---------- Book details ---------- */
+
+.details-body {
+    display: grid;
+    align-content: start;
+    gap: var(--space-5);
+}
+
+.details-top {
+    display: flex;
+    gap: var(--space-4);
+    align-items: flex-start;
+}
+
+.details-cover {
+    flex: none;
+    width: 96px;
+}
+
+.details-main {
+    display: grid;
+    gap: var(--space-1);
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.details-title {
+    font-size: var(--text-lg);
+}
+
+.details-author,
+.details-series {
+    color: var(--fg-muted);
+}
+
+.details-series {
+    font-size: var(--text-sm);
+}
+
+.details-facts {
+    display: grid;
+    gap: var(--space-2);
+    font-size: var(--text-sm);
+
+    & > div {
+        display: grid;
+        grid-template-columns: 7em minmax(0, 1fr);
+        gap: var(--space-3);
+    }
+
+    & dt {
+        color: var(--fg-muted);
+    }
+
+    & dd {
+        font-variant-numeric: tabular-nums;
+        overflow-wrap: anywhere;
+    }
+}
+
+.details-about {
+    display: grid;
+    gap: var(--space-2);
+}
+
+/*
+ * A description can be very long. It has no scroll box of its own: the sheet body scrolls, so
+ * there is one scroll area and not one inside the other.
+ */
+.details-description {
+    line-height: var(--leading-normal);
+    overflow-wrap: anywhere;
+    white-space: pre-line;
+}
+
+.details-actions {
+    flex-wrap: wrap;
+
+    & > .btn-danger {
+        margin-inline-end: auto;
+    }
+}
+
+/* The three buttons do not fit in one row on a small phone. Open gets the first row. */
+@media (max-width: 379px) {
+    .details-actions > .btn-primary {
+        order: -1;
+        flex: 1 1 100%;
+    }
+}
+
+/* ---------- Small dialogs ---------- */
+
+/* The body of a small dialog can have more than one paragraph. */
+.modal-body > p + p {
+    margin-top: var(--space-2);
+}
+
+.remove-name {
+    color: var(--fg);
+    font-weight: var(--weight-semibold);
+    overflow-wrap: anywhere;
+}
+
+.storage-books,
+.storage-usage {
+    color: var(--fg);
+    font-variant-numeric: tabular-nums;
+}
+
+.about-version {
+    font-size: var(--text-sm);
+    font-variant-numeric: tabular-nums;
+}

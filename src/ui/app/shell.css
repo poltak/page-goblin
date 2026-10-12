@@ -1,0 +1,65 @@
+/*
+ * The app shell: rules for the page as a whole. Class and id selectors only, because this
+ * file is not in a cascade layer and wins over each component rule.
+ */
+
+/*
+ * The library scrolls with the page. Without a lock, the page also scrolls behind an open
+ * dialog. The gutter keeps the place of a classic scroll bar, so the lock does not move the
+ * layout. The reader view is not included, because it has its own scroll areas.
+ */
+:root:has(#library-view:not([hidden])) {
+    scrollbar-gutter: stable;
+
+    &:has(dialog[open]) {
+        overflow: hidden;
+    }
+}
+
+/* The state that shows while the reader screen loads. */
+.reader-loading {
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: var(--space-4);
+    min-height: 100dvh;
+    padding: var(--space-6);
+}
+
+/* The mark over the window while the user drags files above it. */
+.drop-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-toast);
+    display: grid;
+    padding: max(var(--space-4), var(--safe-top)) max(var(--space-4), var(--safe-right))
+        max(var(--space-4), var(--safe-bottom)) max(var(--space-4), var(--safe-left));
+    /* The page shows through only a little, so its text does not mix with the text here. */
+    background: color-mix(in srgb, var(--bg) 96%, transparent);
+    /* The elements below must stay the targets of the drag events. */
+    pointer-events: none;
+}
+
+.drop-overlay-box {
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: var(--space-3);
+    border: 2px dashed var(--accent);
+    border-radius: var(--radius-xl);
+    color: var(--fg);
+    font-size: var(--text-lg);
+    font-weight: var(--weight-semibold);
+    text-align: center;
+
+    & > .icon {
+        width: var(--space-10);
+        height: var(--space-10);
+        color: var(--accent-text);
+    }
+}
+
+/* theme-init.js sets data-route on a reload inside a book, so the library does not paint first. */
+:root[data-route='book'] #library-view {
+    display: none;
+}

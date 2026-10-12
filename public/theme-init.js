@@ -20,6 +20,8 @@
             theme = !systemDark ? 'light' : saved.darkTheme === 'black' ? 'black' : 'dark'
         }
         document.documentElement.dataset.theme = theme
+        // A reload inside a book must not paint the library first. The app shell removes this.
+        if (location.hash.indexOf('#/book/') === 0) document.documentElement.dataset.route = 'book'
         var meta = document.querySelector('meta[name="theme-color"]')
         if (meta) meta.setAttribute('content', colors[theme])
     } catch (error) {

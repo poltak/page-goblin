@@ -23,9 +23,432 @@
     </head>
     <body>
         <div id="app">
-            <main id="library-view"></main>
+            <main id="library-view" class="library">
+                <header class="toolbar toolbar-top library-header">
+                    <div class="library-bar">
+                        <h1 class="library-name">Web eReader</h1>
+                        <button
+                            class="btn btn-primary library-add"
+                            type="button"
+                            data-action="add-books"
+                            aria-label="Add books"
+                        >
+                            <svg class="icon" aria-hidden="true"><use href="#i-plus" /></svg>
+                            <span>Add books</span>
+                        </button>
+                        <button
+                            class="icon-btn"
+                            type="button"
+                            id="theme-button"
+                            popovertarget="theme-menu"
+                            aria-haspopup="menu"
+                            aria-expanded="false"
+                            aria-label="Theme"
+                        >
+                            <svg class="icon" aria-hidden="true"><use href="#i-palette" /></svg>
+                        </button>
+                        <button
+                            class="icon-btn"
+                            type="button"
+                            id="app-menu-button"
+                            popovertarget="app-menu"
+                            aria-haspopup="menu"
+                            aria-expanded="false"
+                            aria-label="More"
+                        >
+                            <svg class="icon" aria-hidden="true"><use href="#i-more" /></svg>
+                        </button>
+                    </div>
+                </header>
+
+                <div class="library-body">
+                    <div class="library-toolbar" id="library-toolbar" hidden>
+                        <div class="library-search" role="search">
+                            <label class="input-icon">
+                                <svg class="icon" aria-hidden="true"><use href="#i-search" /></svg>
+                                <input
+                                    class="input"
+                                    type="search"
+                                    id="library-search"
+                                    placeholder="Search"
+                                    aria-label="Search by title or author"
+                                    aria-keyshortcuts="/"
+                                    autocomplete="off"
+                                    autocapitalize="off"
+                                    spellcheck="false"
+                                    enterkeyhint="search"
+                                />
+                            </label>
+                            <button
+                                class="icon-btn icon-btn-sm library-search-clear"
+                                type="button"
+                                data-action="clear-search"
+                                aria-label="Clear the search"
+                                hidden
+                            >
+                                <svg class="icon" aria-hidden="true"><use href="#i-x" /></svg>
+                            </button>
+                        </div>
+                        <p class="library-count num" id="library-count" aria-live="polite"></p>
+                        <select class="select library-sort" id="library-sort" aria-label="Sort by">
+                            <option value="recent">Recent</option>
+                            <option value="added">Date added</option>
+                            <option value="title">Title</option>
+                            <option value="author">Author</option>
+                        </select>
+                    </div>
+
+                    <div
+                        class="import-status"
+                        id="import-status"
+                        aria-live="polite"
+                        aria-atomic="false"
+                    >
+                        <div class="import-current" hidden>
+                            <p class="import-file"></p>
+                            <p class="import-progress-text" aria-hidden="true">
+                                <span class="import-phase"></span>
+                                <span class="import-count num"></span>
+                            </p>
+                            <div
+                                class="progress"
+                                role="progressbar"
+                                aria-label="Progress of this file"
+                                aria-valuemin="0"
+                                aria-valuemax="100"
+                            ></div>
+                        </div>
+                        <ul class="import-failures" role="list"></ul>
+                    </div>
+
+                    <h2 class="visually-hidden" id="library-heading">Your books</h2>
+                    <ul
+                        class="book-grid library-grid"
+                        id="library-grid"
+                        role="list"
+                        aria-labelledby="library-heading"
+                    ></ul>
+
+                    <div class="empty-state library-no-match" id="library-no-match" hidden>
+                        <p class="empty-state-text">No book matches this search.</p>
+                        <button class="btn" type="button" data-action="clear-search">
+                            Clear the search
+                        </button>
+                    </div>
+
+                    <div class="empty-state" id="library-empty" hidden>
+                        <svg class="icon" aria-hidden="true"><use href="#i-library" /></svg>
+                        <h2 class="empty-state-title">No books yet</h2>
+                        <p class="empty-state-text">
+                            Add EPUB files to start reading<span class="library-drop-hint"
+                                >, or drop them on this page</span
+                            >. Your books stay on this device.
+                        </p>
+                        <button class="btn btn-primary" type="button" data-action="add-books">
+                            <svg class="icon" aria-hidden="true"><use href="#i-upload" /></svg>
+                            <span>Add books</span>
+                        </button>
+                        <p class="empty-state-text library-sources">
+                            Free books:
+                            <a
+                                href="https://standardebooks.org"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                >Standard Ebooks</a
+                            >
+                            and
+                            <a
+                                href="https://www.gutenberg.org"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                >Project Gutenberg</a
+                            >.
+                        </p>
+                    </div>
+                </div>
+
+                <input
+                    class="visually-hidden"
+                    type="file"
+                    id="book-files"
+                    accept=".epub,application/epub+zip"
+                    multiple
+                    tabindex="-1"
+                    aria-hidden="true"
+                />
+                <input
+                    class="visually-hidden"
+                    type="file"
+                    id="backup-file"
+                    accept=".json,application/json"
+                    tabindex="-1"
+                    aria-hidden="true"
+                />
+            </main>
             <div id="reader-view" hidden></div>
         </div>
+
+        <div class="drop-overlay" id="drop-overlay" hidden>
+            <div class="drop-overlay-box">
+                <svg class="icon" aria-hidden="true"><use href="#i-upload" /></svg>
+                <p>Drop EPUB files to add them</p>
+            </div>
+        </div>
+
+        <div class="menu" id="book-menu" popover role="menu" aria-label="Book actions">
+            <button class="menu-item" type="button" role="menuitem" data-action="open">
+                <svg class="icon" aria-hidden="true"><use href="#i-book-open" /></svg>
+                Open
+            </button>
+            <button class="menu-item" type="button" role="menuitem" data-action="details">
+                <svg class="icon" aria-hidden="true"><use href="#i-info" /></svg>
+                Details
+            </button>
+            <hr class="menu-separator" />
+            <button
+                class="menu-item menu-item-danger"
+                type="button"
+                role="menuitem"
+                data-action="remove"
+            >
+                <svg class="icon" aria-hidden="true"><use href="#i-trash" /></svg>
+                Remove
+            </button>
+        </div>
+
+        <div class="menu" id="theme-menu" popover role="menu" aria-label="Theme">
+            <button class="menu-item" type="button" role="menuitemradio" data-theme-choice="auto">
+                Auto
+            </button>
+            <button class="menu-item" type="button" role="menuitemradio" data-theme-choice="light">
+                Light
+            </button>
+            <button class="menu-item" type="button" role="menuitemradio" data-theme-choice="sepia">
+                Sepia
+            </button>
+            <button class="menu-item" type="button" role="menuitemradio" data-theme-choice="dark">
+                Dark
+            </button>
+            <button class="menu-item" type="button" role="menuitemradio" data-theme-choice="black">
+                Black
+            </button>
+        </div>
+
+        <div class="menu" id="app-menu" popover role="menu" aria-label="More">
+            <button class="menu-item" type="button" role="menuitem" data-action="install" hidden>
+                <svg class="icon" aria-hidden="true"><use href="#i-download" /></svg>
+                Install app
+            </button>
+            <button class="menu-item" type="button" role="menuitem" data-action="storage">
+                <svg class="icon" aria-hidden="true"><use href="#i-library" /></svg>
+                Storage
+            </button>
+            <button class="menu-item" type="button" role="menuitem" data-action="export-backup">
+                <svg class="icon" aria-hidden="true"><use href="#i-download" /></svg>
+                Export backup
+            </button>
+            <button class="menu-item" type="button" role="menuitem" data-action="import-backup">
+                <svg class="icon" aria-hidden="true"><use href="#i-upload" /></svg>
+                Import backup
+            </button>
+            <hr class="menu-separator" />
+            <button class="menu-item" type="button" role="menuitem" data-action="about">
+                <svg class="icon" aria-hidden="true"><use href="#i-info" /></svg>
+                About
+            </button>
+        </div>
+
+        <dialog class="sheet" id="details-sheet" aria-labelledby="details-heading" closedby="any">
+            <header class="sheet-header">
+                <h2 class="sheet-title" id="details-heading">Book details</h2>
+                <button class="icon-btn" type="button" aria-label="Close" data-close>
+                    <svg class="icon icon-lg" aria-hidden="true"><use href="#i-x" /></svg>
+                </button>
+            </header>
+            <div class="sheet-body details-body">
+                <div class="details-top">
+                    <span class="book-cover details-cover" aria-hidden="true">
+                        <span class="book-cover-fallback"></span>
+                        <img alt="" decoding="async" draggable="false" hidden />
+                    </span>
+                    <div class="details-main">
+                        <h3 class="details-title"></h3>
+                        <p class="details-author"></p>
+                        <p class="details-series"></p>
+                    </div>
+                </div>
+                <dl class="details-facts">
+                    <div data-fact="progress">
+                        <dt>Progress</dt>
+                        <dd></dd>
+                    </div>
+                    <div data-fact="bookmarks">
+                        <dt>Bookmarks</dt>
+                        <dd></dd>
+                    </div>
+                    <div data-fact="highlights">
+                        <dt>Highlights</dt>
+                        <dd></dd>
+                    </div>
+                    <div data-fact="publisher">
+                        <dt>Publisher</dt>
+                        <dd></dd>
+                    </div>
+                    <div data-fact="published">
+                        <dt>Published</dt>
+                        <dd></dd>
+                    </div>
+                    <div data-fact="language">
+                        <dt>Language</dt>
+                        <dd></dd>
+                    </div>
+                    <div data-fact="file">
+                        <dt>File</dt>
+                        <dd></dd>
+                    </div>
+                    <div data-fact="added">
+                        <dt>Added</dt>
+                        <dd></dd>
+                    </div>
+                </dl>
+                <section class="details-about" aria-labelledby="details-about-heading">
+                    <h3 class="section-label" id="details-about-heading">Description</h3>
+                    <p
+                        class="details-description"
+                        tabindex="0"
+                        role="group"
+                        aria-labelledby="details-about-heading"
+                    ></p>
+                </section>
+            </div>
+            <footer class="sheet-footer details-actions">
+                <button class="btn btn-quiet btn-danger" type="button" data-action="remove">
+                    Remove
+                </button>
+                <button class="btn" type="button" data-action="export" disabled>
+                    Export highlights
+                </button>
+                <button class="btn btn-primary" type="button" data-action="open">Open</button>
+            </footer>
+        </dialog>
+
+        <dialog
+            class="modal"
+            id="remove-dialog"
+            aria-labelledby="remove-heading"
+            aria-describedby="remove-text"
+            closedby="any"
+        >
+            <h2 class="modal-title" id="remove-heading">Remove this book?</h2>
+            <p class="modal-body" id="remove-text">
+                <strong class="remove-name"></strong> and its bookmarks and highlights are removed
+                from this device. You cannot undo this.
+            </p>
+            <div class="modal-actions">
+                <button class="btn btn-quiet" type="button" data-close value="cancel">
+                    Cancel
+                </button>
+                <button class="btn btn-danger" type="button" data-close value="remove">
+                    Remove
+                </button>
+            </div>
+        </dialog>
+
+        <dialog class="modal" id="storage-dialog" aria-labelledby="storage-heading" closedby="any">
+            <h2 class="modal-title" id="storage-heading">Storage</h2>
+            <div class="modal-body">
+                <p class="storage-books"></p>
+                <p class="storage-usage"></p>
+                <p>Books and notes are stored in this browser, on this device only.</p>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-primary" type="button" data-close>Done</button>
+            </div>
+        </dialog>
+
+        <dialog class="modal" id="install-dialog" aria-labelledby="install-heading" closedby="any">
+            <h2 class="modal-title" id="install-heading">Install app</h2>
+            <p class="modal-body">To install: tap Share, then Add to Home Screen</p>
+            <div class="modal-actions">
+                <button class="btn btn-primary" type="button" data-close>Done</button>
+            </div>
+        </dialog>
+
+        <dialog class="modal" id="about-dialog" aria-labelledby="about-heading" closedby="any">
+            <h2 class="modal-title" id="about-heading">Web eReader</h2>
+            <div class="modal-body">
+                <p>
+                    An EPUB reader that runs in your browser. Your books, positions and notes stay
+                    on this device.
+                </p>
+                <p class="about-version" hidden></p>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-primary" type="button" data-close>Done</button>
+            </div>
+        </dialog>
+
+        <template id="book-card-template">
+            <li class="book-card">
+                <a class="book-card-open" href="#/" draggable="false">
+                    <span class="book-cover" aria-hidden="true">
+                        <span class="book-cover-fallback"></span>
+                    </span>
+                    <span class="book-card-title"></span>
+                    <span class="book-card-author"></span>
+                </a>
+                <div class="book-card-foot">
+                    <div
+                        class="progress"
+                        role="progressbar"
+                        aria-label="Reading progress"
+                        aria-valuemin="0"
+                        aria-valuemax="100"
+                        hidden
+                    ></div>
+                    <span class="book-card-percent" hidden></span>
+                    <button
+                        class="book-card-menu"
+                        type="button"
+                        popovertarget="book-menu"
+                        aria-haspopup="menu"
+                        aria-expanded="false"
+                    >
+                        <svg class="icon" aria-hidden="true"><use href="#i-more" /></svg>
+                    </button>
+                </div>
+            </li>
+        </template>
+
+        <template id="import-failure-template">
+            <li class="import-failure">
+                <svg class="icon" aria-hidden="true"><use href="#i-info" /></svg>
+                <div class="import-failure-body">
+                    <p class="import-failure-file"></p>
+                    <p class="import-failure-message"></p>
+                    <details class="import-failure-details" hidden>
+                        <summary>Details</summary>
+                        <p class="import-failure-detail"></p>
+                    </details>
+                </div>
+                <button
+                    class="icon-btn icon-btn-sm"
+                    type="button"
+                    data-action="dismiss-failure"
+                    aria-label="Close this message"
+                >
+                    <svg class="icon" aria-hidden="true"><use href="#i-x" /></svg>
+                </button>
+            </li>
+        </template>
+
+        <template id="reader-loading-template">
+            <div class="reader-loading" role="status">
+                <span class="spinner spinner-lg" aria-hidden="true"></span>
+                <span class="text-muted">Opening the book</span>
+            </div>
+        </template>
+
         <div id="toasts" aria-live="polite"></div>
         <script type="module" src="/src/main.ts"></script>
     </body>
