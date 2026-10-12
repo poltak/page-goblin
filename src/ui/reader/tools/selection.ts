@@ -22,7 +22,7 @@ import { watchScreenArea, isFloatOpen, moveFloat, setFloatOpen, startedIn } from
 import { isGhostClick } from './ghost-click'
 import { isHighlightColor, readLastColor, saveLastColor } from './last-color'
 import { createNoteDialog } from './note-dialog'
-import { placeFloating } from './place'
+import { dockFloating, placeFloating } from './place'
 import type { Box, Side, Size } from './place'
 import { onPositionChange } from './position-change'
 import { iconMarkup, templateOf } from './template'
@@ -47,12 +47,6 @@ export const HELD_SETTLE_MS = 1500
  * click in the task of the release. A touch screen can send it in a later task.
  */
 export const CLICK_WAIT_MS = 400
-
-/**
- * The space between the selection and the toolbar on a touch screen. The handles of the
- * system selection hang below the text, and the toolbar must not be under them.
- */
-export const COARSE_GAP = 24
 
 export const SEARCH_QUERY_MAX = 80
 
@@ -155,7 +149,7 @@ export function createSelectionTools(options: SelectionToolsOptions): Part {
         save: (id, note) => session.updateHighlight(id, { note }),
     })
 
-    // A phone shows its own selection menu above the selection.
+    // A phone shows its own selection menu next to the selection, above it or below it.
     const coarse = typeof matchMedia === 'function' ? matchMedia('(pointer: coarse)') : null
 
     /** The selection that the toolbar is for, also while the toolbar waits for the end of a drag. */
@@ -226,13 +220,20 @@ export function createSelectionTools(options: SelectionToolsOptions): Part {
         markColor(selectionBar, lastColor)
         // One layout read, at the first time and after a resize.
         selectionBarSize ??= sizeOf(selectionBar)
-        const touch = coarse?.matches ?? false
-        place(selectionBar, {
-            anchor: current.bounds,
-            size: selectionBarSize,
-            prefer: touch ? 'below' : 'above',
-            gap: touch ? COARSE_GAP : undefined,
-        })
+        if (coarse?.matches) {
+            // The toolbar stays clear of the system menu at an edge of the screen.
+            const { viewport, safe } = area.get()
+            moveFloat(
+                selectionBar,
+                dockFloating({ anchor: current.bounds, size: selectionBarSize, viewport, safe }),
+            )
+        } else {
+            place(selectionBar, {
+                anchor: current.bounds,
+                size: selectionBarSize,
+                prefer: 'above',
+            })
+        }
         setFloatOpen(selectionBar, true)
     }
 

@@ -8,7 +8,6 @@ import { GHOST_CLICK_MS } from './ghost-click'
 import { HIGHLIGHT_COLOR_KEY } from './last-color'
 import {
     CLICK_WAIT_MS,
-    COARSE_GAP,
     HELD_SETTLE_MS,
     HIGHLIGHT_REMOVE_ERROR,
     HIGHLIGHT_SAVE_ERROR,
@@ -279,16 +278,18 @@ describe('the selection toolbar', () => {
         expect(selectionBar().style.transform).toBe(`translate3d(350px, ${40 + 8}px, 0)`)
     })
 
-    it('goes below the selection on a device with a coarse pointer', () => {
+    it('docks at the bottom edge on a device with a coarse pointer', () => {
         tools.destroy()
         vi.stubGlobal('matchMedia', (query: string) => ({ matches: query === '(pointer: coarse)' }))
         mount()
 
         showSelection()
 
-        // The gap is larger there, for the handles of the system selection.
-        expect(COARSE_GAP).toBe(24)
-        expect(selectionBar().style.transform).toBe(`translate3d(350px, ${320 + 24}px, 0)`)
+        // The system selection menu takes the space next to the selection.
+        const y = window.innerHeight - 8 - BAR_HEIGHT
+        expect(selectionBar().style.transform).toBe(
+            `translate3d(${(window.innerWidth - BAR_WIDTH) / 2}px, ${y}px, 0)`,
+        )
     })
 
     it('measures its size one time, and again after a resize', () => {

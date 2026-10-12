@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { FLOAT_GAP, FLOAT_MARGIN, placeFloating, roomAround } from './place'
+import {
+    FLOAT_GAP,
+    FLOAT_MARGIN,
+    placeFloating,
+    roomAround,
+    DOCK_CLEARANCE,
+    dockFloating,
+} from './place'
 import type { Box } from './place'
 
 const viewport = { width: 1000, height: 800 }
@@ -177,5 +184,45 @@ describe('roomAround', () => {
             above: 0,
             below: 0,
         })
+    })
+})
+
+describe('dockFloating', () => {
+    const size = { width: 300, height: 100 }
+    const viewport = { width: 390, height: 800 }
+    const anchorAt = (top: number) => ({ left: 100, right: 200, top, bottom: top + 20 })
+
+    it('docks at the bottom edge, centred', () => {
+        expect(dockFloating({ anchor: anchorAt(300), size, viewport })).toEqual({
+            x: 45,
+            y: 800 - 8 - 100,
+            side: 'below',
+        })
+    })
+
+    it('stays above the bottom safe area', () => {
+        const safe = { top: 47, right: 0, bottom: 34, left: 0 }
+        expect(dockFloating({ anchor: anchorAt(300), size, viewport, safe }).y).toBe(
+            800 - 34 - 8 - 100,
+        )
+    })
+
+    it('docks at the top edge when the selection is near the bottom edge', () => {
+        const safe = { top: 47, right: 0, bottom: 34, left: 0 }
+        const bottomY = 800 - 34 - 8 - 100
+        const near = anchorAt(bottomY - DOCK_CLEARANCE - 19)
+        expect(dockFloating({ anchor: near, size, viewport, safe })).toEqual({
+            x: 45,
+            y: 47 + 8,
+            side: 'above',
+        })
+        const clear = anchorAt(bottomY - DOCK_CLEARANCE - 20)
+        expect(dockFloating({ anchor: clear, size, viewport, safe }).side).toBe('below')
+    })
+
+    it('starts at the left margin when the box is wider than the screen', () => {
+        expect(
+            dockFloating({ anchor: anchorAt(300), size: { width: 500, height: 100 }, viewport }).x,
+        ).toBe(8)
     })
 })

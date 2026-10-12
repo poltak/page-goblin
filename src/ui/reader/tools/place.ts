@@ -102,3 +102,30 @@ export function placeFloating(options: PlaceOptions): Placement {
     // Whole pixels keep the text of the box sharp.
     return { x: Math.round(x), y: Math.round(y), side }
 }
+
+/**
+ * The clear height between the docked box and the anchor. A phone shows its own selection menu
+ * and the selection handles next to the selection. The docked box must not be under them.
+ */
+export const DOCK_CLEARANCE = 72
+
+/**
+ * Docks the box at the bottom edge of the screen, centred. When the anchor is too near to the
+ * bottom edge, the box docks at the top edge. Used on a touch screen, where the selection menu
+ * of the system takes the space next to the selection.
+ */
+export function dockFloating(options: Omit<PlaceOptions, 'prefer' | 'gap'>): Placement {
+    const { anchor, size, viewport } = options
+    const safe = options.safe ?? NO_INSETS
+    const margin = options.margin ?? FLOAT_MARGIN
+
+    const x = clamp(
+        (viewport.width - size.width) / 2,
+        safe.left + margin,
+        viewport.width - safe.right - margin - size.width,
+    )
+    const bottomY = viewport.height - safe.bottom - margin - size.height
+    const side: Side = anchor.bottom + DOCK_CLEARANCE <= bottomY ? 'below' : 'above'
+    const y = side === 'below' ? bottomY : safe.top + margin
+    return { x: Math.round(x), y: Math.round(y), side }
+}
