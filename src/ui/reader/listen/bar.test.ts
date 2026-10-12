@@ -446,6 +446,62 @@ describe('a move of the reader during speech', () => {
         )
     })
 
+    it('follows the marker again when the voice comes to the page of the reader', async () => {
+        const h = await playOnPageOne()
+        relocate(h, PAGE_TWO)
+        h.provider.end()
+        // 'Two.' is on the first page, so the page stays where the reader put it.
+        expect(h.session.view.setActiveRange).toHaveBeenLastCalledWith(
+            { spineIndex: 0, start: 5, end: 9 },
+            { follow: false },
+        )
+
+        h.provider.last().onStart()
+        h.provider.end()
+        // 'Three.' starts on the second page. The view sends no position for that.
+        expect(h.session.view.setActiveRange).toHaveBeenLastCalledWith(
+            { spineIndex: 0, start: 10, end: 16 },
+            { follow: true },
+        )
+    })
+
+    it('does not go back for a sentence that starts on the page before', async () => {
+        const h = make({ chapters: ['One. Two three. Four.'] })
+        relocate(h, PAGE_ONE)
+        await h.play()
+        await vi.advanceTimersByTimeAsync(LAYOUT_SETTLE_MS)
+        relocate(h, positionAt({ start: 9, end: 21 }, 2))
+
+        h.provider.end()
+        // 'Two three.' starts on the first page and ends on the second page. With a follow,
+        // the view would turn back to its start.
+        expect(h.session.view.setActiveRange).toHaveBeenLastCalledWith(
+            { spineIndex: 0, start: 5, end: 15 },
+            { follow: false },
+        )
+
+        h.provider.last().onStart()
+        h.provider.end()
+        expect(h.session.view.setActiveRange).toHaveBeenLastCalledWith(
+            { spineIndex: 0, start: 16, end: 21 },
+            { follow: true },
+        )
+    })
+
+    it('continues the paused sentence after the voice came to the page of the reader', async () => {
+        const h = await playOnPageOne()
+        relocate(h, PAGE_TWO)
+        h.provider.end()
+        h.provider.last().onStart()
+        h.provider.end()
+        h.provider.last().onStart()
+        click(h.button('toggle'))
+        click(h.button('toggle'))
+        // Speech does not start again at the top of the page.
+        expect(h.spoken()).toEqual(['One.', 'Two.', 'Three.'])
+        expect(h.state()).toBe('playing')
+    })
+
     it('follows the marker when the voice turns the page', async () => {
         const h = await playOnPageOne()
         h.provider.end()

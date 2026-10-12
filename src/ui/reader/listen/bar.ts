@@ -262,8 +262,22 @@ export function createListenBarWith(options: ListenBarOptions): ModeController {
             session.view.setActiveRange(null)
             return
         }
-        const follow = canFollow()
         const position = session.position
+        // The voice came to the text that the reader shows, so the page follows it again. A
+        // range that starts before that text does not count, because the view would go back
+        // to the start of the range.
+        if (
+            away &&
+            position &&
+            isInSight(range, position) &&
+            !(
+                range.spineIndex === position.visible.spineIndex &&
+                range.start < position.visible.start
+            )
+        ) {
+            away = false
+        }
+        const follow = canFollow()
         if (follow && position && !isInSight(range, position)) following = true
         session.view.setActiveRange(range, { follow })
     }
