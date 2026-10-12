@@ -3,6 +3,13 @@ const MAX_HEIGHT = 720
 const JPEG_QUALITY = 0.85
 /** A cover that cannot be made smaller is kept only when it is below this size. */
 const MAX_ORIGINAL_BYTES = 1.5 * 1024 * 1024
+/**
+ * A browser shows these types as an image. It never loads them as a document. An SVG file is
+ * a document: at its blob URL in a tab of its own, a script in it can run with the origin of
+ * the app. The test is an exact match, because a book can state a type such as
+ * "image/svg+xml foo".
+ */
+const RASTER_TYPE = /^image\/(?:png|jpeg|gif|webp|avif|bmp)$/
 
 interface DrawOptions {
     bitmap: ImageBitmap
@@ -47,11 +54,12 @@ async function encode(options: DrawOptions): Promise<Blob | null> {
  * pixels and keeps the aspect ratio. A small image is not made larger.
  *
  * When the browser cannot decode or encode the image, the result is the original image if it
- * is small, else null. This function does not reject.
+ * is small and has a raster type, else null. This function does not reject.
  */
 export async function makeCoverThumbnail(blob: Blob): Promise<Blob | null> {
     // An empty file is not a cover. The library view would show a broken image for it.
-    const original = blob.size > 0 && blob.size < MAX_ORIGINAL_BYTES ? blob : null
+    const original =
+        blob.size > 0 && blob.size < MAX_ORIGINAL_BYTES && RASTER_TYPE.test(blob.type) ? blob : null
     if (typeof createImageBitmap !== 'function') return original
 
     let bitmap: ImageBitmap | null = null

@@ -181,6 +181,57 @@ describe('makeCoverThumbnail', () => {
             expect(await makeCoverThumbnail(makeImage(LARGE_SIZE))).toBeNull()
         })
 
+        it('gives null for an SVG image that cannot be decoded', async () => {
+            // An SVG file with a script. At its blob URL, a browser loads it as a document.
+            const svg = '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'
+            const image = new Blob([svg], { type: 'image/svg+xml' })
+
+            // The first call has no createImageBitmap. The second call has a decoder that fails.
+            expect(await makeCoverThumbnail(image)).toBeNull()
+            vi.stubGlobal('createImageBitmap', () => Promise.reject(new Error('Not an image.')))
+            expect(await makeCoverThumbnail(image)).toBeNull()
+        })
+
+        it('gives the small JPEG of an SVG image that the browser can decode', async () => {
+            stubBitmap({ width: 600, height: 900 })
+            const canvas = stubOffscreenCanvas()
+            const image = new Blob(['<svg/>'], { type: 'image/svg+xml' })
+
+            expect(await makeCoverThumbnail(image)).toBe(canvas.encoded)
+        })
+
+        it('gives null for an SVG image when the encoder fails', async () => {
+            stubBitmap({ width: 600, height: 900 })
+            stubOffscreenCanvas({ encoded: new Error('Unable to encode.') })
+
+            expect(
+                await makeCoverThumbnail(new Blob(['<svg/>'], { type: 'image/svg+xml' })),
+            ).toBeNull()
+        })
+
+        it.each([
+            'image/svg+xml foo',
+            'image/svg+xml;charset=utf-8',
+            'text/html',
+            'application/xhtml+xml',
+            'application/octet-stream',
+            '',
+        ])('gives null for an original with the type "%s"', async (type) => {
+            vi.stubGlobal('createImageBitmap', () => Promise.reject(new Error('Not an image.')))
+
+            expect(await makeCoverThumbnail(new Blob(['data'], { type }))).toBeNull()
+        })
+
+        it.each(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif', 'image/bmp'])(
+            'keeps a small original with the type %s',
+            async (type) => {
+                vi.stubGlobal('createImageBitmap', () => Promise.reject(new Error('Not an image.')))
+                const image = new Blob(['data'], { type })
+
+                expect(await makeCoverThumbnail(image)).toBe(image)
+            },
+        )
+
         it('gives the original and closes the bitmap when the encoder fails', async () => {
             const { bitmap } = stubBitmap({ width: 1600, height: 2400 })
             stubOffscreenCanvas({ encoded: new Error('Unable to encode.') })
