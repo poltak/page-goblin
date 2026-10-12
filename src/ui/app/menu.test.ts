@@ -1,5 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMenu } from './menu'
+import type { Menu } from './menu'
 import { installOverlayMethods } from './testing/page'
 
 let menu: HTMLElement
@@ -343,5 +346,173 @@ describe('a press outside the open menu', () => {
         link.click()
 
         expect(onLink).toHaveBeenCalledTimes(1)
+    })
+})
+
+// Safari 16 and Firefox 115 have no Popover API. No menu opened there.
+describe('in a browser with no Popover API', () => {
+    let control: Menu
+    let link: HTMLAnchorElement
+
+    const shows = () => !menu.hidden && menu.classList.contains('is-open')
+
+    beforeEach(() => {
+        // A menu that a test before left open still listens on the window. A scroll closes it
+        // while the page has the methods of the Popover API.
+        document.dispatchEvent(new Event('scroll'))
+        const prototype = HTMLElement.prototype as Partial<HTMLElement>
+        delete prototype.showPopover
+        delete prototype.hidePopover
+        // Such a browser does not know the attribute. jsdom knows it, and gives no focus to
+        // an element in a popover.
+        menu.removeAttribute('popover')
+        link = document.createElement('a')
+        link.href = '#/book/1'
+        document.body.append(link)
+        control = createMenu({ menu, onSelect })
+    })
+
+    afterEach(() => {
+        control.close()
+        installOverlayMethods()
+    })
+
+    it('hides the closed menu, so its items are not in the order of the Tab key', () => {
+        expect(menu.hidden).toBe(true)
+        expect(shows()).toBe(false)
+    })
+
+    it('opens the menu with a class, at the button, with the focus on the first item', () => {
+        vi.spyOn(buttonA, 'getBoundingClientRect').mockReturnValue(new DOMRect(10, 20, 44, 44))
+
+        control.toggle(buttonA)
+
+        expect(shows()).toBe(true)
+        expect(buttonA.getAttribute('aria-expanded')).toBe('true')
+        expect(menu.style.left).toBe('10px')
+        expect(menu.style.top).toBe('68px')
+        expect(document.activeElement).toBe(item('open'))
+    })
+
+    it('closes on a second toggle and gives the focus back to the button', () => {
+        control.toggle(buttonA)
+        control.toggle(buttonA)
+
+        expect(shows()).toBe(false)
+        expect(menu.hidden).toBe(true)
+        expect(buttonA.getAttribute('aria-expanded')).toBe('false')
+        expect(document.activeElement).toBe(buttonA)
+    })
+
+    it('moves the open menu to a different button', () => {
+        control.toggle(buttonA)
+        control.toggle(buttonB)
+
+        expect(shows()).toBe(true)
+        expect(buttonA.getAttribute('aria-expanded')).toBe('false')
+        expect(buttonB.getAttribute('aria-expanded')).toBe('true')
+    })
+
+    it('closes the menu, then reports the chosen item', () => {
+        control.toggle(buttonB)
+
+        item('details').click()
+
+        expect(shows()).toBe(false)
+        expect(onSelect).toHaveBeenCalledWith(item('details'), buttonB)
+    })
+
+    it('closes on a press outside, and that press does not activate the element below', () => {
+        const onLink = vi.fn<(event: Event) => void>()
+        link.addEventListener('click', onLink)
+        control.toggle(buttonA)
+
+        // As a popover, the menu is open until the end of the press. The reader screen keeps
+        // the press from the page while its menu is open.
+        const seenByPage: boolean[] = []
+        link.addEventListener('pointerdown', () => seenByPage.push(shows()), { once: true })
+        link.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+        expect(seenByPage).toEqual([true])
+
+        link.dispatchEvent(new Event('pointerup', { bubbles: true }))
+        expect(shows()).toBe(false)
+        expect(buttonA.getAttribute('aria-expanded')).toBe('false')
+
+        const click = new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 })
+        link.dispatchEvent(click)
+        expect(onLink).not.toHaveBeenCalled()
+        expect(click.defaultPrevented).toBe(true)
+    })
+
+    it('stays open for a press on an item and for a press on its button', () => {
+        control.toggle(buttonA)
+
+        item('details').dispatchEvent(new Event('pointerdown', { bubbles: true }))
+        item('details').dispatchEvent(new Event('pointerup', { bubbles: true }))
+        expect(shows()).toBe(true)
+        // The click of the button closes the menu with toggle().
+        buttonA.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+        buttonA.dispatchEvent(new Event('pointerup', { bubbles: true }))
+        expect(shows()).toBe(true)
+    })
+
+    it('closes on Escape, and the key does no more', () => {
+        control.toggle(buttonA)
+
+        const event = key('Escape')
+
+        expect(shows()).toBe(false)
+        expect(event.defaultPrevented).toBe(true)
+        expect(document.activeElement).toBe(buttonA)
+        // The listener is there only while the menu is open.
+        expect(key('Escape').defaultPrevented).toBe(false)
+    })
+
+    it('closes when the page scrolls', () => {
+        control.toggle(buttonA)
+
+        document.dispatchEvent(new Event('scroll'))
+
+        expect(shows()).toBe(false)
+    })
+
+    it('closes the open menu when a different menu opens', () => {
+        const other = menu.cloneNode(true) as HTMLElement
+        other.id = 'other-menu'
+        document.body.append(other)
+        const otherControl = createMenu({ menu: other, onSelect })
+        control.toggle(buttonA)
+
+        otherControl.toggle(buttonB)
+
+        expect(shows()).toBe(false)
+        expect(buttonA.getAttribute('aria-expanded')).toBe('false')
+        expect(other.classList.contains('is-open')).toBe(true)
+        otherControl.close()
+    })
+
+    // The reader screen listens for this event of its menu.
+    it('sends the event of the Popover API before each change', () => {
+        const states: unknown[] = []
+        menu.addEventListener('beforetoggle', (event) => {
+            states.push((event as ToggleEvent).newState)
+        })
+
+        control.toggle(buttonA)
+        control.toggle(buttonA)
+
+        expect(states).toEqual(['open', 'closed'])
+    })
+
+    // The component rule keeps a menu with the popover attribute at opacity 0.
+    it('has a rule that shows the menu for the class', () => {
+        const css = readFileSync(join(import.meta.dirname, 'shell.css'), 'utf8').replace(
+            /\s+/g,
+            ' ',
+        )
+
+        expect(css).toContain(
+            '.menu.is-open { opacity: 1; pointer-events: auto; transform: none; }',
+        )
     })
 })

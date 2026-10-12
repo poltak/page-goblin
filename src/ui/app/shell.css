@@ -59,6 +59,16 @@
     }
 }
 
+/*
+ * A menu in a browser that has no Popover API, for example Safari 16. The menu script sets
+ * the class in place of the :popover-open state.
+ */
+.menu.is-open {
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
+}
+
 /* theme-init.js sets data-route on a reload inside a book, so the library does not paint first. */
 :root[data-route='book'] #library-view {
     display: none;

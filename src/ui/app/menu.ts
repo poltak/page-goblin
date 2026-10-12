@@ -8,6 +8,9 @@
  *
  * A press outside the open menu only closes it. The click of that press does not reach the
  * page, except on a button that has `popovertarget`.
+ *
+ * A browser with no Popover API (Safari 16, Firefox 115) gets the same behaviour from this
+ * script: the class `is-open` shows the menu, and a press outside or Escape closes it.
  */
 
 /** Space between the menu and its button, and between the menu and the screen edge. */
@@ -31,11 +34,13 @@ export interface Menu {
 
 // The browser closes an open menu for a press outside it, and then sends the click of that
 // press to the element below the pointer. In the library that element is a book, so the
-// press that closes the menu would also open a book. The menus share this state and its two
+// press that closes the menu would also open a book. The menus share this state and its
 // listeners, because only one menu is open at a time.
 let openMenu: HTMLElement | null = null
 let pressedOutside = false
 let watchesPresses = false
+/** Closes the open menu in a browser with no Popover API, which does not close it itself. */
+let closeWithoutPopover: (() => void) | null = null
 
 function watchPresses(): void {
     if (watchesPresses) return
@@ -50,6 +55,16 @@ function watchPresses(): void {
                 target instanceof Element &&
                 !openMenu.contains(target) &&
                 target.closest('[popovertarget]') === null
+        },
+        true,
+    )
+    // The browser closes a popover at the end of a press outside it, not at its start. The
+    // reader screen uses that: the menu is open while the press goes down to the page, so
+    // the screen keeps that press from the reader view.
+    document.addEventListener(
+        'pointerup',
+        () => {
+            if (pressedOutside) closeWithoutPopover?.()
         },
         true,
     )
@@ -76,6 +91,10 @@ function items(menu: HTMLElement): HTMLElement[] {
 export function createMenu({ menu, onSelect, onOpen }: MenuOptions): Menu {
     let anchor: HTMLElement | null = null
     let open = false
+    const hasPopover = typeof menu.showPopover === 'function'
+    // Without the Popover API the browser does not hide the closed menu. The attribute
+    // keeps its items out of the order of the Tab key.
+    if (!hasPopover) menu.hidden = true
     watchPresses()
 
     // The menu is open and has its size at this time. The reads come before the writes, so
@@ -108,7 +127,45 @@ export function createMenu({ menu, onSelect, onOpen }: MenuOptions): Menu {
     }
 
     function close(): void {
-        if (open) menu.hidePopover?.()
+        if (!open) return
+        if (hasPopover) {
+            menu.hidePopover()
+            return
+        }
+        const hadFocus = menu.contains(document.activeElement)
+        sendBeforeToggle('closed')
+        menu.classList.remove('is-open')
+        menu.hidden = true
+        closeWithoutPopover = null
+        document.removeEventListener('keydown', onEscape, true)
+        // The browser gives the focus back to the button when it closes a popover.
+        if (hadFocus) anchor?.focus({ preventScroll: true })
+    }
+
+    function show(): void {
+        if (hasPopover) {
+            menu.showPopover()
+            return
+        }
+        // Only one menu is open at a time.
+        closeWithoutPopover?.()
+        sendBeforeToggle('open')
+        menu.hidden = false
+        menu.classList.add('is-open')
+        closeWithoutPopover = close
+        document.addEventListener('keydown', onEscape, true)
+    }
+
+    /** The event that a browser with the Popover API sends before each change of the menu. */
+    function sendBeforeToggle(newState: 'open' | 'closed'): void {
+        menu.dispatchEvent(Object.assign(new Event('beforetoggle'), { newState }))
+    }
+
+    /** For a browser with no Popover API. The key only closes the menu, not a dialog below it. */
+    function onEscape(event: KeyboardEvent): void {
+        if (event.key !== 'Escape') return
+        event.preventDefault()
+        close()
     }
 
     // The menu has a fixed position. When the page scrolls, the button moves away from it.
@@ -164,7 +221,7 @@ export function createMenu({ menu, onSelect, onOpen }: MenuOptions): Menu {
 
             anchor = target
             onOpen?.(target)
-            menu.showPopover?.()
+            show()
             place(target)
 
             const list = items(menu)

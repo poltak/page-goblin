@@ -62,13 +62,15 @@ export function createReaderHost(options: ReaderHostOptions): ReaderHost {
 
     function showViews(): void {
         const reading = wanted !== null
+        // theme-init.js sets this on a reload inside a book. From here the hidden attribute rules.
+        // It comes before the return: theme-init.js also sets it for a book address that the
+        // router does not accept, and the library must then show.
+        delete document.documentElement.dataset.route
         if (reading === libraryView.hidden) return
         // A hidden library has no height, so the page loses its scroll position.
         if (wanted !== null) restoreLibraryPosition = capturePosition(wanted)
         libraryView.hidden = reading
         readerView.hidden = !reading
-        // theme-init.js sets this on a reload inside a book. From here the hidden attribute rules.
-        delete document.documentElement.dataset.route
         if (!reading) {
             restoreLibraryPosition?.()
             restoreLibraryPosition = null

@@ -1,8 +1,11 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { BookRecord, LibraryStorage } from '$lib/storage/types'
 import type { MountedReader, ReaderMountOptions } from '../reader/types'
 import { APP_TITLE, createReaderHost, LOADING_DELAY_MS } from './reader-host'
 import type { ReaderHost, ReaderHostOptions } from './reader-host'
+import { createRouter } from './router'
 import { mountPage } from './testing/page'
 
 type MountReader = (options: ReaderMountOptions) => Promise<MountedReader>
@@ -83,6 +86,7 @@ beforeEach(() => {
 afterEach(() => {
     vi.useRealTimers()
     vi.restoreAllMocks()
+    delete document.documentElement.dataset.route
 })
 
 describe('createReaderHost', () => {
@@ -416,6 +420,69 @@ describe('createReaderHost', () => {
 
         expect(events).toEqual([])
         expect(window.scrollTo).not.toHaveBeenCalled()
+        expect(libraryView.hidden).toBe(false)
+    })
+})
+
+// theme-init.js hides the library before the first paint for each hash that starts with
+// '#/book/'. shell.css does that with the data-route mark, which jsdom does not apply.
+describe('the mark that theme-init.js sets for a book address', () => {
+    const root = document.documentElement
+    const themeInit = readFileSync(
+        join(import.meta.dirname, '../../../public/theme-init.js'),
+        'utf8',
+    )
+
+    /** Loads the page at the hash: the script of index.html runs, then the router starts. */
+    function loadPageAt(hash: string): { host: ReaderHost; stop(): void } {
+        history.replaceState(null, '', hash)
+        new Function(themeInit)()
+        const host = makeHost()
+        const router = createRouter({
+            onRoute: (route) => host.show(route.name === 'book' ? route.bookId : null),
+        })
+        router.start()
+        return { host, stop: () => router.destroy() }
+    }
+
+    afterEach(() => {
+        history.replaceState(null, '', '#/')
+    })
+
+    it('is gone when the reader shows the book of the address', async () => {
+        const { host, stop } = loadPageAt('#/book/b1')
+        await host.settled()
+
+        expect(root.dataset.route).toBeUndefined()
+        expect(libraryView.hidden).toBe(true)
+        expect(readerView.querySelector('.fake-reader')?.textContent).toBe('b1')
+        stop()
+    })
+
+    it.each(['#/book/', '#/book/b1/', '#/book/a/b', '#/book/%E0%A4%A'])(
+        'is gone and the library shows for the bad book address %s',
+        async (hash) => {
+            const { host, stop } = loadPageAt(hash)
+            await host.settled()
+
+            expect(root.dataset.route).toBeUndefined()
+            expect(libraryView.hidden).toBe(false)
+            expect(readerView.hidden).toBe(true)
+            expect(host.bookId).toBeNull()
+            expect(mountReader).not.toHaveBeenCalled()
+            // The address shows what is on screen.
+            expect(location.hash).toBe('#/')
+            stop()
+        },
+    )
+
+    it('is gone when the library is asked for and is on screen', () => {
+        root.dataset.route = 'book'
+        const host = makeHost()
+
+        host.show(null)
+
+        expect(root.dataset.route).toBeUndefined()
         expect(libraryView.hidden).toBe(false)
     })
 })
