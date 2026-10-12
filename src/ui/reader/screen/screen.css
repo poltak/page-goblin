@@ -1,0 +1,323 @@
+/*
+ * The reader screen: a grid that fills the viewport. From the top: the running head, the stage
+ * with the book text, the dock for the listen bar, and the running foot. The two bars and the
+ * overlay layer lie over the grid.
+ *
+ * This file is not in a cascade layer, so each rule wins over the component rules.
+ */
+
+/* A swipe in the book must not reload the page or move it past its edge. */
+:root:has(.reader-screen) {
+    overscroll-behavior: none;
+}
+
+/* Toasts go above the bottom bar while it shows: two rows of controls and the bar padding. */
+:root:has(.reader-bar-bottom:not([inert])) #toasts {
+    --toast-offset: calc(var(--control-h) * 2 + var(--space-5));
+}
+
+.reader-screen {
+    --reader-bar-max: 720px;
+
+    position: relative;
+    /* The z-index values below stay inside the screen. */
+    isolation: isolate;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    grid-template-columns: minmax(0, 1fr);
+    height: 100dvh;
+    /* The text stays clear of a notch at the side in landscape. The bars have their own inset. */
+    padding-inline: var(--safe-left) var(--safe-right);
+    overflow: hidden;
+    background: var(--rd-bg);
+    color: var(--rd-fg);
+}
+
+/* ---------- Running head and foot ---------- */
+
+/* These two lines carry the safe areas, so the page text is never below the notch or the home
+   indicator. */
+.reader-head,
+.reader-foot {
+    grid-column: 1;
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    min-width: 0;
+    padding-inline: var(--space-4);
+    color: var(--fg-faint);
+    font-size: var(--text-xs);
+    line-height: var(--leading-tight);
+    white-space: nowrap;
+    /* A drag that selects book text must not select these lines. */
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.reader-head {
+    grid-row: 1;
+    justify-content: center;
+    height: calc(var(--space-7) + var(--safe-top));
+    padding-top: var(--safe-top);
+}
+
+.reader-head-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.reader-foot {
+    grid-row: 4;
+    justify-content: space-between;
+    height: calc(var(--space-7) + var(--safe-bottom));
+    padding-bottom: var(--safe-bottom);
+}
+
+.reader-foot-page {
+    flex: none;
+}
+
+.reader-foot-progress {
+    min-width: 0;
+    margin-inline-start: auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ---------- Stage, status and dock ---------- */
+
+.reader-stage {
+    grid-row: 2;
+    grid-column: 1;
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+}
+
+/* The loading state and the message for a book that did not open. It lies over the stage. */
+.reader-status {
+    grid-row: 2;
+    grid-column: 1;
+    z-index: var(--z-raised);
+    display: grid;
+    place-items: center;
+    min-height: 0;
+    overflow-y: auto;
+    color: var(--fg);
+}
+
+.reader-dock {
+    grid-row: 3;
+    grid-column: 1;
+    min-width: 0;
+}
+
+/* ---------- Bars ---------- */
+
+.reader-bar {
+    position: absolute;
+    inset-inline: 0;
+    z-index: var(--z-chrome);
+    background: var(--surface);
+    transition:
+        transform var(--dur-base) var(--ease-out),
+        opacity var(--dur-base) var(--ease-out),
+        visibility 0s;
+
+    /* A hidden bar is inert. It leaves the screen, and then it is not painted. */
+    &[inert] {
+        visibility: hidden;
+        opacity: 0;
+        transition:
+            transform var(--dur-base) var(--ease-in),
+            opacity var(--dur-base) var(--ease-in),
+            visibility 0s var(--dur-base);
+    }
+}
+
+.reader-bar-top {
+    top: 0;
+
+    &[inert] {
+        transform: translateY(-100%);
+    }
+}
+
+.reader-bar-bottom {
+    bottom: 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-1);
+    padding-top: var(--space-2);
+    padding-bottom: calc(var(--space-2) + var(--safe-bottom));
+
+    &[inert] {
+        transform: translateY(100%);
+    }
+}
+
+/* The title and the author share one line. */
+.reader-book-author {
+    margin-inline-start: var(--space-1);
+    color: var(--fg-muted);
+    font-weight: var(--weight-regular);
+}
+
+/*
+ * On a phone the six buttons leave a narrow column for the title. Two short lines show more
+ * of it than one line that is cut after some letters.
+ */
+@media (max-width: 479px) {
+    .reader-book {
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        font-size: var(--text-sm);
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+
+    .reader-book-author {
+        display: none;
+    }
+}
+
+/* On the smallest phones the column has room for two or three letters. It stays empty. */
+@media (max-width: 359px) {
+    .reader-book {
+        visibility: hidden;
+    }
+}
+
+.reader-seek,
+.reader-modes {
+    width: 100%;
+    max-width: var(--reader-bar-max);
+    margin-inline: auto;
+    padding-inline: var(--space-3);
+}
+
+.reader-seek {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: var(--control-h);
+}
+
+.reader-back {
+    flex: none;
+}
+
+.reader-slider {
+    position: relative;
+    flex: 1 1 auto;
+    min-width: 0;
+    /* The label reads the width of this box as 100cqw. */
+    container-type: inline-size;
+}
+
+/*
+ * The label follows the thumb with a transform, so the move of the thumb causes no layout.
+ * --value is the slider position from 0 to 1. The middle of the thumb moves from half a thumb
+ * to the full width minus half a thumb, and the label stays inside the box of the slider.
+ */
+.reader-slider-label {
+    --thumb: var(--space-5);
+
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    max-width: 100%;
+    margin-bottom: var(--space-1);
+    padding: var(--space-1) var(--space-2);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    background: var(--surface-raised);
+    box-shadow: var(--shadow-raised);
+    color: var(--fg);
+    font-size: var(--text-sm);
+    line-height: var(--leading-tight);
+    white-space: nowrap;
+    pointer-events: none;
+    transform: translateX(
+        clamp(
+            0px,
+            calc(var(--thumb) / 2 + var(--value, 0) * (100cqw - var(--thumb)) - 50%),
+            calc(100cqw - 100%)
+        )
+    );
+}
+
+/* A long title gets the ellipsis. The percent always shows. */
+.reader-slider-label-title {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--fg-muted);
+    text-overflow: ellipsis;
+}
+
+.reader-slider-label-percent {
+    flex: none;
+    font-weight: var(--weight-medium);
+    font-variant-numeric: tabular-nums;
+}
+
+.reader-percent {
+    flex: none;
+    min-width: 4ch;
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    text-align: end;
+}
+
+.reader-modes {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-2);
+}
+
+/* ---------- The way to the bars for the keyboard ---------- */
+
+.reader-show-bars {
+    position: absolute;
+    top: calc(var(--safe-top) + var(--space-2));
+    left: calc(var(--safe-left) + var(--space-2));
+    z-index: var(--z-chrome);
+    background: var(--surface-raised);
+    color: var(--fg);
+
+    /* On screen only while it has the keyboard focus. */
+    &:not(:focus-visible) {
+        width: 1px;
+        height: 1px;
+        min-height: 0;
+        margin: -1px;
+        padding: 0;
+        border: 0;
+        overflow: hidden;
+        clip-path: inset(50%);
+    }
+}
+
+/* ---------- Overlay layer ---------- */
+
+.reader-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: var(--z-sheet);
+    pointer-events: none;
+}
+
+/*
+ * pointer-events inherits, so an open dialog or popover of a part would be dead in this
+ * layer. The selector has no specificity, so a part can set its own value. Each other element
+ * of a part sets pointer-events itself, because a wrapper must let taps through to the page.
+ */
+:where(.reader-overlay) :where(dialog[open], :popover-open) {
+    pointer-events: auto;
+}

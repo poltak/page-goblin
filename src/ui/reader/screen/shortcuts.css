@@ -1,0 +1,81 @@
+/* The keyboard shortcuts dialog of the reader screen. */
+
+.reader-shortcuts {
+    /* Two columns of text need more width than a confirmation. */
+    --modal-width: 440px;
+
+    /*
+     * The list is higher than most screens. The title and the Done button stay in view, and
+     * only the list scrolls. The Done button gets no focus at the open, because the browser
+     * would then show the end of the list first.
+     *
+     * The dialog keeps its display value until the close transition ends, so the direction is
+     * not part of the open state. Else the parts go into one row while the dialog closes.
+     */
+    flex-direction: column;
+    overflow: hidden;
+
+    &[open] {
+        display: flex;
+    }
+}
+
+.reader-shortcuts-groups {
+    display: grid;
+    gap: var(--space-5);
+    min-height: 0;
+    margin-top: var(--space-4);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.reader-shortcuts-group {
+    display: grid;
+    gap: var(--space-2);
+}
+
+.reader-shortcuts-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--text-sm);
+    line-height: var(--leading-snug);
+
+    & th,
+    & td {
+        padding: var(--space-1) 0;
+        border-top: 1px solid var(--border);
+        font-weight: var(--weight-regular);
+        text-align: start;
+        vertical-align: baseline;
+    }
+
+    & tbody th {
+        width: 50%;
+        padding-inline-end: var(--space-3);
+        /* Each key cap has its own line height, so wrapped caps do not touch. */
+        line-height: var(--space-6);
+    }
+
+    & td {
+        color: var(--fg-muted);
+    }
+
+    & kbd {
+        display: inline-block;
+        padding: 0 var(--space-1);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-sm);
+        background: var(--fill);
+        color: var(--fg);
+        font-family: var(--font-ui);
+        font-size: var(--text-xs);
+        line-height: var(--space-5);
+        white-space: nowrap;
+    }
+}
+
+.reader-shortcuts-note {
+    color: var(--fg-faint);
+    font-size: var(--text-sm);
+    line-height: var(--leading-snug);
+}

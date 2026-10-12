@@ -1,0 +1,150 @@
+<div class="reader-screen">
+    <button class="btn btn-sm reader-show-bars" type="button" data-screen-action="show-bars" hidden>
+        Show the toolbars
+    </button>
+
+    <div class="toolbar toolbar-top reader-bar reader-bar-top" inert>
+        <button
+            class="icon-btn"
+            type="button"
+            data-screen-action="exit"
+            aria-label="Back to the library"
+        >
+            <svg class="icon icon-lg" aria-hidden="true"><use href="#i-arrow-left" /></svg>
+        </button>
+        <p class="toolbar-title reader-book">
+            <span class="reader-book-title"></span>
+            <span class="reader-book-author"></span>
+        </p>
+        <button
+            class="icon-btn"
+            type="button"
+            data-screen-action="search"
+            aria-label="Search"
+            aria-keyshortcuts="/"
+        >
+            <svg class="icon icon-lg" aria-hidden="true"><use href="#i-search" /></svg>
+        </button>
+        <button
+            class="icon-btn"
+            type="button"
+            data-screen-action="bookmark"
+            aria-label="Bookmark this page"
+            aria-pressed="false"
+            aria-keyshortcuts="B"
+        >
+            <svg class="icon icon-lg" aria-hidden="true"><use href="#i-bookmark" /></svg>
+        </button>
+        <button
+            class="icon-btn"
+            type="button"
+            data-screen-action="contents"
+            aria-label="Contents"
+            aria-keyshortcuts="T"
+        >
+            <svg class="icon icon-lg" aria-hidden="true"><use href="#i-list" /></svg>
+        </button>
+        <button
+            class="icon-btn"
+            type="button"
+            data-screen-action="appearance"
+            aria-label="Reading settings"
+            aria-keyshortcuts="A"
+        >
+            <svg class="icon icon-lg" aria-hidden="true"><use href="#i-type" /></svg>
+        </button>
+        <button
+            class="icon-btn"
+            type="button"
+            data-screen-action="more"
+            popovertarget="reader-more-menu"
+            aria-label="More"
+            aria-haspopup="menu"
+            aria-expanded="false"
+        >
+            <svg class="icon icon-lg" aria-hidden="true"><use href="#i-more" /></svg>
+        </button>
+    </div>
+
+    <!-- The bottom bar comes before the page in the order of the Tab key, so the keyboard
+         gets from one bar to the other with no stop at each link of the book. -->
+    <div class="toolbar toolbar-bottom reader-bar reader-bar-bottom" inert>
+        <div class="reader-seek">
+            <button
+                class="btn btn-quiet btn-sm reader-back"
+                type="button"
+                data-screen-action="back"
+                aria-label="Back to the last position"
+                hidden
+            >
+                <svg class="icon" aria-hidden="true"><use href="#i-rotate-ccw" /></svg>
+                <span>Back</span>
+            </button>
+            <div class="reader-slider">
+                <span class="reader-slider-label" aria-hidden="true" hidden>
+                    <span class="reader-slider-label-title"></span>
+                    <span class="reader-slider-label-percent"></span>
+                </span>
+                <input
+                    class="slider"
+                    type="range"
+                    min="0"
+                    max="1000"
+                    step="1"
+                    value="0"
+                    aria-label="Position in the book"
+                />
+            </div>
+            <span class="reader-percent num"></span>
+        </div>
+        <div class="reader-modes">
+            <button class="btn" type="button" data-screen-action="speed" aria-keyshortcuts="S">
+                <svg class="icon" aria-hidden="true"><use href="#i-zap" /></svg>
+                <span>Speed read</span>
+            </button>
+            <button class="btn" type="button" data-screen-action="listen" aria-keyshortcuts="L">
+                <svg class="icon" aria-hidden="true"><use href="#i-headphones" /></svg>
+                <span>Listen</span>
+            </button>
+        </div>
+    </div>
+
+    <p class="reader-head"><span class="reader-head-text"></span></p>
+    <div class="reader-stage"></div>
+    <div class="reader-status" hidden></div>
+    <div class="reader-dock"></div>
+    <p class="reader-foot num">
+        <span class="reader-foot-page"></span>
+        <span class="reader-foot-progress"></span>
+    </p>
+
+    <div class="reader-overlay"></div>
+
+    <div class="menu" id="reader-more-menu" popover role="menu" aria-label="More">
+        <button
+            class="menu-item"
+            type="button"
+            role="menuitem"
+            data-screen-action="fullscreen"
+            aria-keyshortcuts="F"
+            hidden
+        >
+            <svg class="icon" aria-hidden="true"><use href="#i-maximize" /></svg>
+            <span>Full screen</span>
+        </button>
+        <button
+            class="menu-item"
+            type="button"
+            role="menuitem"
+            data-screen-action="shortcuts"
+            aria-keyshortcuts="?"
+        >
+            <svg class="icon" aria-hidden="true"><use href="#i-info" /></svg>
+            <span>Keyboard shortcuts</span>
+        </button>
+        <button class="menu-item" type="button" role="menuitem" data-screen-action="export">
+            <svg class="icon" aria-hidden="true"><use href="#i-download" /></svg>
+            <span>Export highlights</span>
+        </button>
+    </div>
+</div>
