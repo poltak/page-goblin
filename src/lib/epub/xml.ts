@@ -6,8 +6,16 @@
 const XML_ENTITIES = new Set(['amp', 'lt', 'gt', 'quot', 'apos'])
 const BLOCK_TAG_START =
     /<(?=\/?(?:p|div|br|li|ul|ol|h[1-6]|blockquote|table|tr|td|th|dl|dt|dd|hr|section|article)\b)/gi
-/** A comment, a processing instruction, a declaration, or the name of the first element. */
-const BEFORE_ROOT = /<!--[\s\S]*?-->|<\?[\s\S]*?\?>|<![^>]*>|<([A-Za-z_][\w.:-]*)/g
+/**
+ * A comment, a processing instruction, a declaration, or the name of the first element.
+ *
+ * `|$` gives the remainder of the text to a comment, an instruction or a declaration that has
+ * no end. Such a text is not well-formed, so the result of the repair does not change.
+ * Without it, each such start scans to the end of the text and then fails, and a file with
+ * many of them would stop the page for minutes.
+ */
+const BEFORE_ROOT =
+    /<!--[\s\S]*?(?:-->|$)|<\?[\s\S]*?(?:\?>|$)|<![^>]*(?:>|$)|<([A-Za-z_][\w.:-]*)/g
 /** The attributes of a start tag, from the end of the element name. */
 const ROOT_ATTRIBUTES = /(?:[^<>"']|"[^"]*"|'[^']*')*/y
 /** The prefix of an element name or of an attribute name. */

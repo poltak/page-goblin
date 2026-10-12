@@ -1021,6 +1021,124 @@ describe('buildSheet', () => {
     })
 })
 
+describe('buildSheet: font faces from the text', () => {
+    /** The family and the source of each font face that the text scanner finds. */
+    function facesOf(css: string): string[][] {
+        vi.stubGlobal('CSSStyleSheet', undefined)
+        return buildSheet(css).fontFaces.map((face) => [face.family, face.src])
+    }
+
+    it('reads each rule in source order, also in a grouping rule', () => {
+        const faces = facesOf(
+            '@font-face{font-family:A;src:url("blob:test/a")}\n' +
+                '@media print { @font-face { font-family: B; src: url("blob:test/b") } }\n' +
+                'p { color: red }\n' +
+                '@FONT-FACE\n{\n  font-family: C;\n  src: url("blob:test/c")\n}',
+        )
+
+        expect(faces).toEqual([
+            ['A', 'url("blob:test/a")'],
+            ['B', 'url("blob:test/b")'],
+            ['C', 'url("blob:test/c")'],
+        ])
+    })
+
+    it('does not end a rule at a brace in a string or after a backslash', () => {
+        expect(facesOf('@font-face { font-family: "}{"; src: url("blob:test/a}") }')).toEqual([
+            ['}{', 'url("blob:test/a}")'],
+        ])
+        expect(facesOf("@font-face { font-family: '{}'; src: url('blob:test/b{') }")).toEqual([
+            ['{}', "url('blob:test/b{')"],
+        ])
+        expect(facesOf('@font-face { font-family: a\\}b; src: url("blob:test/c") }')).toEqual([
+            ['a}b', 'url("blob:test/c")'],
+        ])
+    })
+
+    it('gives nothing for a rule that has a block in it or that has no end', () => {
+        expect(facesOf('@font-face { font-family: A; p { } src: url("blob:test/a") }')).toEqual([])
+        expect(facesOf('@font-face { font-family: B; src: url("blob:test/b")')).toEqual([])
+        expect(facesOf('@font-face { font-family: C; src: url("blob:test/c) }')).toEqual([])
+    })
+
+    it('reads the rule after a rule that has a block in it', () => {
+        const faces = facesOf(
+            '@font-face { font-family: A; p { } }\n' +
+                '@font-face { @font-face { font-family: B; src: url("blob:test/b") } }\n' +
+                '@font-face { font-family: C; src: url("blob:test/c") }',
+        )
+
+        expect(faces).toEqual([
+            ['B', 'url("blob:test/b")'],
+            ['C', 'url("blob:test/c")'],
+        ])
+    })
+
+    it('does not read a rule that is in a string', () => {
+        const faces = facesOf(
+            'p::after { content: "@font-face { font-family: S; src: url(blob:test/s) }" }\n' +
+                '@font-face { font-family: A; src: url("blob:test/a") }',
+        )
+
+        expect(faces).toEqual([['A', 'url("blob:test/a")']])
+    })
+
+    it('drops each form of an empty font source', () => {
+        const forms = [
+            'url()',
+            'url( )',
+            'url("")',
+            "url('')",
+            'url( "" )',
+            "url(\t''\n)",
+            'URL("")',
+        ]
+
+        for (const form of forms) {
+            const faces = facesOf(
+                `@font-face { font-family: A; src: ${form}, url("blob:test/a.woff") }`,
+            )
+            expect(faces, form).toEqual([['A', 'url("blob:test/a.woff")']])
+        }
+    })
+
+    it('keeps a font source that is not empty', () => {
+        const forms = ['url("#a")', 'url(#a)', 'url("data:font/woff2;base64,AAAA")', 'local("A")']
+
+        for (const form of forms) {
+            expect(facesOf(`@font-face { font-family: A; src: ${form} }`), form).toEqual([
+                ['A', form],
+            ])
+        }
+    })
+})
+
+describe('buildSheet: large input', () => {
+    const LENGTH = 200_000
+    // In this text each `\"` after the first one is an escape in a string, so the string of
+    // each `@font-face{` has no end.
+    const openStrings = '"@font-face{\\'.repeat(Math.ceil(LENGTH / 13))
+
+    // Before the scanner read the text one time, and before the pattern for an empty URL had
+    // one reading of a row of spaces, each of these texts kept the page busy for seconds.
+    it.each([
+        ['font face rules with a string that has no end', openStrings],
+        ['font face rules with a string that ends before a block', `${openStrings}x"{`],
+        [
+            'a font source with spaces after url(',
+            `@font-face { font-family: A; src: url(${' '.repeat(LENGTH)}x }`,
+        ],
+    ])('reads %s in linear time', (_name, css) => {
+        vi.stubGlobal('CSSStyleSheet', undefined)
+        const start = performance.now()
+
+        const { fontFaces } = buildSheet(css)
+
+        expect(performance.now() - start).toBeLessThan(500)
+        expect(fontFaces).toEqual([])
+    })
+})
+
 describe('scaleFontSize', () => {
     const scaled = (length: string) => `calc(${length} * var(--rd-scale, 1))`
 
@@ -1149,6 +1267,21 @@ describe('scaleFontSize', () => {
         for (const value of ['0', '0px', '0.0pt', '.0in', '0e3px']) {
             expect(scaleFontSize(value), value).toBeNull()
         }
+    })
+
+    it('reads a long row of digits in linear time', () => {
+        // A browser gives a value with var() as the book wrote it, so this text gets to the
+        // pattern. Before the pattern had one reading of a row of digits, the first value
+        // kept the page busy for many seconds.
+        const digits = '1'.repeat(200_000)
+        const start = performance.now()
+
+        expect(scaleFontSize(`${digits} var(--x)`)).toBeNull()
+        expect(scaleFontSize(`${digits}.${digits} var(--x)`)).toBeNull()
+        expect(scaleFontSize(`.${digits} var(--x)`)).toBeNull()
+        expect(scaleFontSize(`1e${digits} var(--x)`)).toBeNull()
+        expect(scaleLineHeight(`+${digits}pxx`)).toBeNull()
+        expect(performance.now() - start).toBeLessThan(500)
     })
 })
 

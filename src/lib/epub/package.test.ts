@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { openEpub } from './index'
+import { readPackage } from './package'
 import { buildEpub, chapterXhtml, packEpub, TINY_PNG } from './testing/build-epub'
+import { parseXml } from './xml'
 
 const chapter = (title = 'Chapter') => chapterXhtml({ title, body: `<p>${title}</p>` })
 
@@ -875,5 +877,52 @@ describe('creator names', () => {
         const book = await openEpub(blob)
         expect(book.metadata.creators).toEqual(['Andy Weir', 'William Strunk'])
         expect(book.metadata.author).toBe('Andy Weir, William Strunk')
+    })
+
+    it('removes only the separators and the white space at the end of a name', async () => {
+        const blob = await buildEpub({
+            metadata: { creators: [] },
+            extraMetadata: `<dc:creator>First, Second; </dc:creator>
+                <dc:creator>Third ;,; ,</dc:creator>
+                <dc:creator> ;, </dc:creator>
+                <dc:creator>;Fourth; Fifth</dc:creator>`,
+        })
+        const book = await openEpub(blob)
+        expect(book.metadata.creators).toEqual(['First, Second', 'Third', ';Fourth; Fifth'])
+    })
+
+    it('reads a name with a long row of separators in linear time', () => {
+        // The row is not at the end of the name. Before the pattern had a lookbehind, it
+        // tried each position of the row, and this name kept it busy for many seconds.
+        const name = `A${';'.repeat(200_000)}B`
+        const document = parseXml(
+            opf({ metadata: `<dc:title>Book</dc:title><dc:creator>${name}</dc:creator>` }),
+        )!
+        const start = performance.now()
+
+        const { metadata } = readPackage({
+            document,
+            opfPath: 'OEBPS/content.opf',
+            lookup: () => undefined,
+        })
+
+        expect(performance.now() - start).toBeLessThan(500)
+        expect(metadata.creators).toEqual([name])
+    })
+
+    it('removes a long row of separators at the end of a name', () => {
+        const document = parseXml(
+            opf({
+                metadata: `<dc:title>Book</dc:title><dc:creator>A B${'; ,'.repeat(50_000)}</dc:creator>`,
+            }),
+        )!
+
+        const { metadata } = readPackage({
+            document,
+            opfPath: 'OEBPS/content.opf',
+            lookup: () => undefined,
+        })
+
+        expect(metadata.creators).toEqual(['A B'])
     })
 })

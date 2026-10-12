@@ -93,8 +93,15 @@ const HOST_SELECTOR = /:host/i
 const HOST_HINT = /:host|@scope|\\/i
 const EPUB_TYPE_SELECTOR = /^\[\s*epub(?:\||\\:)type(?![\w-])/i
 
-const FONT_FACE_BLOCK =
-    /@font-face\s*\{((?:[^{}"']|"(?:[^"\\]|\\[\s\S])*"|'(?:[^'\\]|\\[\s\S])*')*)\}/gi
+// One token for `fontFaceBlocks`: an escape, a string, the start of a `@font-face` block, or
+// a brace. Each alternative takes its text or fails after a short scan, so the scan reads the
+// text one time. One pattern for the full block does not have this property. From each
+// `@font-face` it reads to the end of the text when a string or the block has no end, and a
+// text with many such starts would stop the page for minutes.
+const FONT_FACE_SCAN = new RegExp(
+    `${ESCAPE}|${DOUBLE_STRING}|${SINGLE_STRING}|@font-face\\s*\\{|[{}]`,
+    'gi',
+)
 
 // The text scanner can miss a URL when the CSS has one of these. Then `buildSheet` also checks
 // the parsed values.
@@ -113,7 +120,13 @@ const FONT_SIZE_KEYWORDS = new Map([
     ['xx-large', '2em'],
     ['xxx-large', '3em'],
 ])
-const ABSOLUTE_LENGTH = /^\+?((?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?(?:px|pt|pc|in|cm|mm|q))$/i
+// The dot and the digits after it are one optional group. With `\d+\.?\d*`, a long row of
+// digits that no unit follows has a split at each digit, and the test of all the splits
+// would stop the page for minutes.
+const ABSOLUTE_LENGTH = /^\+?((?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?(?:px|pt|pc|in|cm|mm|q))$/i
+// `url()` with nothing or an empty string in it. The white space before the string is in the
+// optional group, so a long row of spaces with no `)` after it has only one reading.
+const EMPTY_URL = /url\((?:\s*(?:""|''))?\s*\)/i
 
 /** The reader views set this property on `rd-html` to the font size setting divided by 16. */
 export const SCALE_PROPERTY = '--rd-scale'
@@ -582,7 +595,7 @@ function toFontFaceSpec(read: (name: string) => string): FontFaceSpec | null {
     // An empty URL is a file that is not in the book.
     const src = splitTopLevel(read('src'), ',')
         .map((source) => source.trim())
-        .filter((source) => source && !/url\(\s*(?:""|'')?\s*\)/i.test(source))
+        .filter((source) => source && !EMPTY_URL.test(source))
         .join(', ')
     if (!family || !src || !isLocalRawCss(src)) return null
 
@@ -598,14 +611,39 @@ function toFontFaceSpec(read: (name: string) => string): FontFaceSpec | null {
     }
 }
 
+/**
+ * The text between the braces of each `@font-face` rule, in source order. A rule that has a
+ * block in it or that has no end gives nothing. The text must have no comments.
+ */
+function fontFaceBlocks(css: string): string[] {
+    const blocks: string[] = []
+    // The start of the text of the rule that is open, or -1.
+    let start = -1
+    for (const match of css.matchAll(FONT_FACE_SCAN)) {
+        const first = match[0].charCodeAt(0)
+        if (first === 64) {
+            // `@font-face {`
+            start = match.index + match[0].length
+        } else if (first === 123) {
+            // `{` of a different rule, or of a block in the font face rule.
+            start = -1
+        } else if (first === 125) {
+            if (start >= 0) blocks.push(css.slice(start, match.index))
+            start = -1
+        }
+        // An escape or a string. A brace in it is not the end of a block.
+    }
+    return blocks
+}
+
 /** For environments where the CSS object model does not give the `@font-face` descriptors. */
 function findFontFacesInText(css: string): FontFaceSpec[] {
     const specs: FontFaceSpec[] = []
     if (!/@font-face/i.test(css)) return specs
 
-    for (const match of css.replace(COMMENTS, '').matchAll(FONT_FACE_BLOCK)) {
+    for (const block of fontFaceBlocks(css.replace(COMMENTS, ''))) {
         const declarations = new Map<string, string>()
-        for (const declaration of splitTopLevel(match[1], ';')) {
+        for (const declaration of splitTopLevel(block, ';')) {
             const colon = declaration.indexOf(':')
             if (colon < 0) continue
             declarations.set(

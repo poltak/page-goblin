@@ -1,9 +1,13 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { noiseBytes, recordReads } from './testing/recording-blob'
 import { crc32, createZip } from './testing/zip-writer'
 import { openZip, readBlobBytes, type ZipArchive } from './zip'
 
 const decoder = new TextDecoder()
+
+afterEach(() => {
+    vi.unstubAllGlobals()
+})
 
 async function readString(archive: ZipArchive, path: string): Promise<string> {
     const entry = archive.find(path)
@@ -409,14 +413,29 @@ describe('openZip', () => {
         expect(decoder.decode(bytes)).toBe(text)
     })
 
-    it('rejects a deflated entry whose stated size is above the limit', async () => {
-        const blob = await createZip([{ path: 'a.txt', data: 'alpha '.repeat(100) }])
-        const archive = await openZip(await patchDirectory(blob, SIZE_FIELD, 600 * 1024 * 1024))
-        const entry = archive.find('a.txt')!
+    it('rejects a deflated entry whose stated size is above 96 MB', async () => {
+        const limit = 96 * 1024 * 1024
+        const text = 'alpha '.repeat(100)
+        const blob = await createZip([{ path: 'a.txt', data: text }])
         const tooLarge = { name: 'EpubError', code: 'unsupported-compression' }
 
+        const atLimit = await openZip(await patchDirectory(blob, SIZE_FIELD, limit))
+        expect(await readString(atLimit, 'a.txt')).toBe(text)
+
+        const archive = await openZip(await patchDirectory(blob, SIZE_FIELD, limit + 1))
+        const entry = archive.find('a.txt')!
         await expect(archive.read(entry)).rejects.toMatchObject(tooLarge)
         await expect(archive.readBlob(entry, 'text/plain')).rejects.toMatchObject(tooLarge)
+    })
+
+    it('has no size limit for a stored entry, which is a part of the file', async () => {
+        // The stated size has no effect. The read gives the bytes that are in the file.
+        const blob = await createZip([{ path: 'a.bin', data: noiseBytes(500), compress: false }])
+        const archive = await openZip(await patchDirectory(blob, SIZE_FIELD, 600 * 1024 * 1024))
+        const entry = archive.find('a.bin')!
+
+        expect(await archive.read(entry)).toEqual(noiseBytes(500))
+        expect((await archive.readBlob(entry, 'image/png')).size).toBe(500)
     })
 
     it('rejects a compression method that is not stored or deflate', async () => {
@@ -440,6 +459,159 @@ describe('openZip', () => {
         await expect(archive.read(archive.find('secret.txt')!)).rejects.toMatchObject({
             code: 'drm',
         })
+    })
+})
+
+describe('openZip: reads at the same time', () => {
+    const text = 'Some text that deflate makes smaller. '.repeat(40)
+
+    /**
+     * A DecompressionStream that gives no data and ends only when the test releases it.
+     * `started` counts the streams, and `release` ends the oldest stream that is open.
+     */
+    function holdDecompression() {
+        const releases: (() => void)[] = []
+        const state = { started: 0, release: () => releases.shift()?.() }
+
+        class HeldStream {
+            readable: ReadableStream<Uint8Array>
+            writable = new WritableStream<Uint8Array>()
+
+            constructor() {
+                state.started++
+                const released = new Promise<void>((resolve) => releases.push(resolve))
+                this.readable = new ReadableStream({
+                    async start(controller) {
+                        await released
+                        controller.close()
+                    },
+                })
+            }
+        }
+        vi.stubGlobal('DecompressionStream', HeldStream)
+        return state
+    }
+
+    it('decompresses not more than three entries at the same time', async () => {
+        const names = ['a', 'b', 'c', 'd', 'e', 'f', 'g']
+        const recording = recordReads(
+            await createZip(names.map((name) => ({ path: `${name}.txt`, data: text }))),
+        )
+        const archive = await openZip(recording.blob)
+        const readsAtOpen = recording.reads.length
+        const held = holdDecompression()
+
+        const entries = names.map((name) => archive.find(`${name}.txt`)!)
+        let done = 0
+        const reads = entries.map(async (entry, index) => {
+            // The two functions that decompress use the same queue.
+            await (index % 2 ? archive.readBlob(entry, 'text/plain') : archive.read(entry))
+            done++
+        })
+        /** The header offset of each entry whose data was read, in the sequence of the reads. */
+        const dataReads = () => recording.reads.slice(readsAtOpen).map(([start]) => start)
+        const offsets = entries.map((entry) => entry.headerOffset)
+
+        await vi.waitFor(() => expect(held.started).toBe(3))
+        // An entry that waits has no data in memory, because its data is not read yet.
+        expect(dataReads()).toEqual(offsets.slice(0, 3))
+
+        // Each read that ends gives its place to the read that waited the longest time.
+        for (let started = 4; started <= names.length; started++) {
+            held.release()
+            await vi.waitFor(() => expect(held.started).toBe(started))
+            expect(dataReads()).toEqual(offsets.slice(0, started))
+            expect(done).toBe(started - 3)
+        }
+
+        for (let count = 0; count < 3; count++) held.release()
+        await Promise.all(reads)
+        expect(done).toBe(names.length)
+        expect(held.started).toBe(names.length)
+    })
+
+    it('reads a stored entry while three other entries are decompressed', async () => {
+        const noise = noiseBytes(300)
+        const archive = await openZip(
+            await createZip([
+                { path: 'a.txt', data: text },
+                { path: 'b.txt', data: text },
+                { path: 'c.txt', data: text },
+                { path: 'stored.bin', data: noise, compress: false },
+            ]),
+        )
+        const held = holdDecompression()
+        const reads = ['a.txt', 'b.txt', 'c.txt'].map((path) => archive.read(archive.find(path)!))
+        await vi.waitFor(() => expect(held.started).toBe(3))
+
+        expect(await archive.read(archive.find('stored.bin')!)).toEqual(noise)
+        expect((await archive.readBlob(archive.find('stored.bin')!, 'image/png')).size).toBe(300)
+
+        for (let count = 0; count < 3; count++) held.release()
+        await Promise.all(reads)
+    })
+
+    it('gives the place of a read that fails to the next read', async () => {
+        const blob = await createZip([
+            { path: 'bad.txt', data: 'Some text that deflate makes smaller. '.repeat(400) },
+            { path: 'good.txt', data: text },
+        ])
+        // More data than the directory states, so each read of this entry fails.
+        const archive = await openZip(await patchDirectory(blob, SIZE_FIELD, 100))
+        const bad = archive.find('bad.txt')!
+        const good = archive.find('good.txt')!
+
+        const results = await Promise.allSettled([
+            archive.read(bad),
+            archive.readBlob(bad, 'text/plain'),
+            archive.read(bad),
+            archive.read(bad),
+            archive.read(good),
+            archive.readBlob(good, 'text/plain'),
+        ])
+
+        expect(results.map((result) => result.status)).toEqual([
+            'rejected',
+            'rejected',
+            'rejected',
+            'rejected',
+            'fulfilled',
+            'fulfilled',
+        ])
+        expect(await readString(archive, 'good.txt')).toBe(text)
+    })
+
+    it('gives each of many reads at the same time its own data', async () => {
+        const files = Array.from({ length: 40 }, (_, index) => ({
+            path: `file-${index}.txt`,
+            data: `File ${index}. `.repeat(200 + index),
+        }))
+        const archive = await openZip(await createZip(files))
+
+        const texts = await Promise.all(files.map((file) => readString(archive, file.path)))
+
+        expect(texts).toEqual(files.map((file) => file.data))
+    })
+
+    it('has a queue of its own for each archive', async () => {
+        const blob = await createZip([
+            { path: 'a.txt', data: text },
+            { path: 'b.txt', data: text },
+            { path: 'c.txt', data: text },
+        ])
+        const first = await openZip(blob)
+        const second = await openZip(blob)
+        const held = holdDecompression()
+        const paths = ['a.txt', 'b.txt', 'c.txt']
+
+        const reads = [first, second].flatMap((archive) =>
+            paths.map((path) => archive.read(archive.find(path)!)),
+        )
+
+        // A read that never ends in one book must not stop the reads of a different book.
+        await vi.waitFor(() => expect(held.started).toBe(6))
+        for (let count = 0; count < 6; count++) held.release()
+        await Promise.all(reads)
     })
 })
 

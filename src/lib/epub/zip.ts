@@ -26,9 +26,15 @@ const INFLATE_CHUNK_SIZE = 65536
 const MAX_DEFLATE_RATIO = 1032
 /**
  * The largest entry that is decompressed. A small hostile file can state and give a very
- * large entry. The largest file in a normal book is far below this limit.
+ * large entry. The largest file in 175 real books was below 40 MB.
  */
-const MAX_INFLATED_SIZE = 512 * 1024 * 1024
+const MAX_INFLATED_SIZE = 96 * 1024 * 1024
+/**
+ * The number of entries that are decompressed at the same time. A chapter asks for all its
+ * images and a stylesheet for all its fonts in one step, and each entry is in memory while
+ * it is decompressed. With no limit, a small hostile file could fill the memory of the page.
+ */
+const MAX_PARALLEL_INFLATES = 3
 
 const METHOD_STORED = 0
 const METHOD_DEFLATE = 8
@@ -131,6 +137,7 @@ export async function openZip(blob: Blob): Promise<ZipArchive> {
 
     const entries = readDirectory(directory, shift)
     let folded: Map<string, ZipEntry> | undefined
+    const inflateQueue = createQueue(MAX_PARALLEL_INFLATES)
 
     const dataOf = async (entry: ZipEntry): Promise<Uint8Array<ArrayBuffer>> => {
         const { compressedSize } = entry
@@ -161,6 +168,11 @@ export async function openZip(blob: Blob): Promise<ZipArchive> {
             : chunk.subarray(start, start + compressedSize)
     }
 
+    // The read of the compressed data is in the queue too, so an entry that waits has no
+    // data in memory.
+    const inflated = (entry: ZipEntry) =>
+        inflateQueue(async () => inflate(await dataOf(entry), entry.size))
+
     return {
         entries,
         find(path) {
@@ -179,15 +191,14 @@ export async function openZip(blob: Blob): Promise<ZipArchive> {
         async read(entry) {
             assertReadable(entry)
             if (entry.size === 0 && entry.compressedSize === 0) return new Uint8Array(0)
-            const data = await dataOf(entry)
-            return entry.method === METHOD_STORED ? data : inflate(data, entry.size)
+            return entry.method === METHOD_STORED ? dataOf(entry) : inflated(entry)
         },
         async readBlob(entry, type) {
             assertReadable(entry)
             // Some tools give an empty file the deflate method and no data.
             if (entry.size === 0 && entry.compressedSize === 0) return new Blob([], { type })
             if (entry.method !== METHOD_STORED) {
-                return new Blob([await inflate(await dataOf(entry), entry.size)], { type })
+                return new Blob([await inflated(entry)], { type })
             }
             if (entry.dataOffset < 0) {
                 const header = await readBlobBytes(
@@ -361,6 +372,28 @@ function assertReadable(entry: ZipEntry): void {
             'unsupported-compression',
             `The file is too large to decompress: ${entry.path}`,
         )
+    }
+}
+
+/**
+ * A queue that starts the tasks in the sequence of the calls and runs not more than `limit`
+ * of them at the same time.
+ */
+function createQueue(limit: number): <T>(task: () => Promise<T>) => Promise<T> {
+    let active = 0
+    const waiting: (() => void)[] = []
+
+    return async (task) => {
+        if (active < limit) active++
+        // The task that ends gives its place to this task, so `active` does not change.
+        else await new Promise<void>((resolve) => waiting.push(resolve))
+        try {
+            return await task()
+        } finally {
+            const next = waiting.shift()
+            if (next) next()
+            else active--
+        }
     }
 }
 

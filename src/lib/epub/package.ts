@@ -10,6 +10,13 @@ import { attribute, firstDescendant, htmlToText, localName, textOf } from './xml
 const NCX_MEDIA_TYPE = 'application/x-dtbncx+xml'
 /** Media type of content documents in books that were made from the older OEB format. */
 const OEB_DOCUMENT_MEDIA_TYPE = 'text/x-oeb1-document'
+/**
+ * White space and list separators at the end of a name. The lookbehind lets a match start
+ * only at the first character of a row. Without it, the pattern tries each position of a
+ * long row that is not at the end, and a name with such a row would stop the page for
+ * minutes.
+ */
+const CREATOR_END = /(?<![\s;,])[\s;,]+$/
 
 /** A file in the container, as the ZIP reader has it. */
 export interface ContainerFile {
@@ -321,11 +328,14 @@ function readMetadata(
     }
 
     const allCreators: string[] = []
+    // A package document can list many thousands of creators, so the repeat check uses a set.
+    const seenCreators = new Set<string>()
     const authors: string[] = []
     for (const element of all('creator')) {
         // Some tools leave a list separator at the end of a name ("Andy Weir;").
-        const name = textOf(element).replace(/[\s;,]+$/, '')
-        if (!name || allCreators.includes(name)) continue
+        const name = textOf(element).replace(CREATOR_END, '')
+        if (!name || seenCreators.has(name)) continue
+        seenCreators.add(name)
         const role = attribute(element, 'role')
         const roles = (role ? [role] : refinements(element, 'role')).map((value) =>
             value.toLowerCase(),

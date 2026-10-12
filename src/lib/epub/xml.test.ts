@@ -52,6 +52,45 @@ describe('parseXml', () => {
         const document = parseXml('\n  <?xml version="1.0"?><a>one\u0001two</a>')
         expect(document?.documentElement.textContent).toBe('onetwo')
     })
+
+    it('finds the root element after instructions, comments and a document type', () => {
+        // The entity value and the comments have element names that are not the root element.
+        const document = parseXml(`<?xml version="1.0"?>
+<?xml-stylesheet href="a.css" type="text/css"?>
+<!-- <fake:root> and a > sign -->
+<!DOCTYPE package [
+  <!ENTITY markup "<b>bold</b>">
+  <!-- <inner:name/> -->
+]>
+<package version="2.0"><dc:title>One &nbsp; two</dc:title></package>`)
+
+        expect(document).not.toBeNull()
+        expect(localName(document!.documentElement)).toBe('package')
+        expect(document!.documentElement.getAttribute('version')).toBe('2.0')
+        expect(textOf(firstDescendant(document!, 'title'))).toBe('One two')
+    })
+
+    it('returns null for a comment, an instruction or a declaration that has no end', () => {
+        expect(parseXml('<!-- no end <a:b/>')).toBeNull()
+        expect(parseXml('<?xml version="1.0"><a:b/>')).toBeNull()
+        expect(parseXml('<!DOCTYPE a <a:b/')).toBeNull()
+        expect(parseXml('<a:b/><!-- no end')).toBeNull()
+    })
+
+    // The repair step looks for the root element. Before `|$` was in its pattern, each of
+    // these texts of 200,000 characters kept it busy for seconds.
+    it.each([
+        ['instructions', '<?'.repeat(100_000)],
+        ['instructions before an element', `${'<?'.repeat(100_000)}<a:b/>`],
+        ['comments', '<!--'.repeat(50_000)],
+        ['declarations', '<!'.repeat(100_000)],
+        ['declarations before a name', `${'<!'.repeat(100_000)}<a:b`],
+    ])('reads many %s that have no end in linear time', (_name, text) => {
+        const start = performance.now()
+
+        expect(parseXml(text)).toBeNull()
+        expect(performance.now() - start).toBeLessThan(500)
+    })
 })
 
 describe('parseContentDocument', () => {
