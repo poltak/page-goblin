@@ -1,0 +1,6 @@
+# Package Managers
+pnpm-lock.yaml
+
+# Output
+dist
+coverage

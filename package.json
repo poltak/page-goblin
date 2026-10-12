@@ -1,0 +1,39 @@
+{
+    "name": "web-ereader",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "packageManager": "pnpm@12.6.0",
+    "description": "A local-first EPUB reader and speed reader that runs fully in the browser.",
+    "license": "Apache-2.0",
+    "author": {
+        "name": "Jonathan Poltak Samosir",
+        "email": "jonathan.samosir@gmail.com",
+        "url": "https://poltak.github.io"
+    },
+    "scripts": {
+        "dev": "vite",
+        "build": "vite build",
+        "preview": "vite preview",
+        "check": "svelte-check --tsconfig ./tsconfig.json",
+        "check:watch": "svelte-check --tsconfig ./tsconfig.json --watch",
+        "test": "vitest",
+        "test:single": "vitest run",
+        "lint": "prettier --check .",
+        "format": "prettier --write ."
+    },
+    "devDependencies": {
+        "@sveltejs/vite-plugin-svelte": "^7.3.1",
+        "@testing-library/svelte": "^5.4.2",
+        "@types/node": "^26.6.5",
+        "fake-indexeddb": "^6.2.5",
+        "jsdom": "^30.1.2",
+        "prettier": "^3.9.10",
+        "prettier-plugin-svelte": "^4.1.1",
+        "svelte": "^5.57.2",
+        "svelte-check": "^4.7.6",
+        "typescript": "^6.0.3",
+        "vite": "^8.3.4",
+        "vitest": "^5.0.3"
+    }
+}
