@@ -1,0 +1,85 @@
+/*
+ * The note popover.
+ *
+ *   .note-pop     a .float. data-layout="card" is a box next to the link, and the script
+ *                 gives it its place. data-layout="sheet" is a sheet at the bottom of a
+ *                 narrow screen.
+ *   .note-card    the visible box: .note-head, .note-body (scrolls), .note-foot
+ *   .note-body    the host of the shadow root that has the note
+ */
+
+/* Two classes, so these rules win over .float in each order of the stylesheets. */
+.float.note-pop {
+    width: min(var(--modal-width), calc(100vw - var(--space-4)));
+}
+
+.note-card {
+    display: flex;
+    flex-direction: column;
+    max-height: 50dvh;
+    overflow: hidden;
+}
+
+.note-head {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: var(--control-h);
+    padding: 0 var(--space-1) 0 var(--space-4);
+}
+
+.note-title {
+    flex: 1 1 auto;
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    font-weight: var(--weight-semibold);
+}
+
+.note-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 0 var(--space-4) var(--space-3);
+    color: var(--rd-fg);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+
+    /* The ring is inside the box, because the card cuts off what is outside it. */
+    &:focus-visible {
+        outline-offset: -2px;
+    }
+}
+
+.note-foot {
+    display: flex;
+    flex: none;
+    justify-content: flex-end;
+    padding: var(--space-1) var(--space-2);
+    border-top: 1px solid var(--border);
+}
+
+.float.note-pop[data-layout='sheet'] {
+    inset: auto 0 0;
+    width: auto;
+    max-width: none;
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+    transition-delay: var(--dur-slow);
+
+    &.is-open {
+        transition-delay: 0s;
+    }
+
+    & > .note-card {
+        padding: 0 var(--safe-right) var(--safe-bottom) var(--safe-left);
+        border-width: 1px 0 0;
+        border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+        box-shadow: var(--shadow-sheet);
+        opacity: 1;
+        transform: translateY(100%);
+        transition-duration: var(--dur-slow);
+    }
+
+    &.is-open > .note-card {
+        transform: none;
+    }
+}

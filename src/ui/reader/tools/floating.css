@@ -1,0 +1,59 @@
+/*
+ * The floating boxes of the reader: the selection toolbar and the note popover.
+ *
+ *   .float           the box that the script moves with a transform. It has no look.
+ *                    .is-open shows it.
+ *   .float-surface   the visible box inside: raised surface, hairline border, menu shadow.
+ *   .float-probe     gives the script the safe-area insets in pixels.
+ *
+ * The overlay layer of the reader takes no pointer events and the value inherits, so each
+ * open box sets it again.
+ */
+
+.float {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: var(--z-menu);
+    width: max-content;
+    max-width: calc(100vw - var(--space-4));
+    border-radius: var(--radius-lg);
+    visibility: hidden;
+    pointer-events: none;
+    /* The box stays in the page until the fade of its surface ends. */
+    transition: visibility 0s linear var(--dur-fast);
+
+    &.is-open {
+        visibility: visible;
+        pointer-events: auto;
+        transition-delay: 0s;
+    }
+}
+
+/* The durations are 0ms under prefers-reduced-motion, so the box then shows with no motion. */
+.float-surface {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--surface-raised);
+    color: var(--fg);
+    box-shadow: var(--shadow-raised);
+    opacity: 0;
+    transform: translateY(var(--space-1));
+    transition:
+        opacity var(--dur-fast) var(--ease-out),
+        transform var(--dur-fast) var(--ease-out);
+
+    .float.is-open > & {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+.float-probe {
+    position: fixed;
+    top: 0;
+    left: 0;
+    padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
+    visibility: hidden;
+    pointer-events: none;
+}

@@ -1,0 +1,108 @@
+/*
+ * The image viewer: a dialog that covers the screen.
+ *
+ *   .img-viewer         the dialog. It has data-theme="black", so the colour tokens inside
+ *                       are dark on each theme. .is-zoomed when the zoom is above 1.
+ *   .img-viewer-stage   the area of the image, inside the safe areas
+ *   .img-viewer-image   the script sets its transform. .is-smooth animates the change.
+ *   .img-viewer-close   the close button at the top right
+ */
+
+dialog.img-viewer {
+    position: fixed;
+    inset: 0;
+    /* For a browser that takes the dialog out of the top layer before its fade ends. */
+    z-index: var(--z-sheet);
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    max-height: none;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    /* The dialog is its own dark scrim. An older browser gives ::backdrop no tokens. */
+    background: color-mix(in srgb, var(--bg) 90%, transparent);
+    color: var(--fg);
+    overflow: hidden;
+    opacity: 0;
+    /* The pinch, the pan and the wheel are for the script, not for the browser. */
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+    transition-timing-function: var(--ease-out);
+    transition-duration: var(--dur-base);
+    transition-property: opacity, overlay, display;
+    /* Keeps the dialog on screen until the close transition ends. */
+    transition-behavior: allow-discrete;
+
+    /* The overlay layer of the reader takes no pointer events, and the value inherits. */
+    &[open] {
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    &:not([open]) {
+        pointer-events: none;
+    }
+
+    &::backdrop {
+        background: transparent;
+    }
+}
+
+@starting-style {
+    dialog.img-viewer[open] {
+        opacity: 0;
+    }
+}
+
+.img-viewer-stage {
+    position: absolute;
+    inset: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
+    touch-action: none;
+}
+
+/* In the centre of the stage, as large as the stage or smaller, with its own proportions. */
+.img-viewer-image {
+    position: absolute;
+    inset: 0;
+    max-width: 100%;
+    max-height: 100%;
+    margin: auto;
+    object-fit: contain;
+    cursor: zoom-in;
+    -webkit-user-drag: none;
+    -webkit-touch-callout: none;
+
+    &.is-smooth {
+        transition: transform var(--dur-base) var(--ease-out);
+    }
+
+    .img-viewer.is-zoomed & {
+        cursor: grab;
+    }
+
+    /* Its own layer while the viewer is open, so a pinch does not paint the image again. */
+    .img-viewer[open] & {
+        will-change: transform;
+    }
+}
+
+.img-viewer-close {
+    position: absolute;
+    top: calc(var(--safe-top) + var(--space-2));
+    right: calc(var(--safe-right) + var(--space-2));
+    border: 1px solid var(--border-strong);
+    background: var(--surface-raised);
+    color: var(--fg);
+
+    @media (hover: hover) {
+        &:hover {
+            background: var(--border);
+        }
+    }
+
+    &:active {
+        background: var(--border);
+    }
+}

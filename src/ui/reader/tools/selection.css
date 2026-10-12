@@ -1,0 +1,114 @@
+/*
+ * The selection toolbar, the toolbar of a saved highlight and the note dialog.
+ *
+ *   .sel-bar          a .float with role="toolbar"
+ *   .sel-bar-body     the row of buttons: the colours, then the actions
+ *   .sel-group        one group of buttons
+ *   .sel-note         the note of a highlight, above the buttons
+ *   .note-dialog      a dialog.modal with the quote, the text field and the actions
+ */
+
+.sel-bar-body {
+    display: flex;
+    align-items: center;
+    padding: var(--space-1);
+}
+
+.sel-group {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.sel-actions {
+    margin-inline-start: var(--space-1);
+    padding-inline-start: var(--space-1);
+    border-inline-start: 1px solid var(--border);
+}
+
+/*
+ * The width is that of the buttons. With a width of 0 the text adds nothing to the width of
+ * the toolbar, and the minimum then fills the width that the buttons made.
+ * A margin and not a padding: with line-clamp, a cut line shows in the padding.
+ */
+.sel-note {
+    display: -webkit-box;
+    width: 0;
+    min-width: calc(100% - var(--space-6));
+    margin: var(--space-3) var(--space-3) var(--space-2);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    line-height: var(--leading-snug);
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 4;
+    line-clamp: 4;
+
+    /* The hairline between the note and the buttons. */
+    & + .sel-bar-body {
+        border-top: 1px solid var(--border);
+    }
+
+    &[hidden] + .sel-bar-body {
+        border-top: 0;
+    }
+}
+
+/* A mouse needs less room than a finger, and ten buttons of 44px do not fit in 420px. */
+@media (pointer: fine) and (min-width: 420px) {
+    .sel-bar :is(.swatch, .icon-btn) {
+        width: var(--control-h-compact);
+        height: var(--control-h-compact);
+    }
+}
+
+/* Two rows. Ten buttons for a finger need 480px. */
+@media (max-width: 419.98px), (pointer: coarse) and (max-width: 479.98px) {
+    .sel-bar-body {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .sel-actions {
+        margin: var(--space-1) 0 0;
+        padding: var(--space-1) 0 0;
+        border-inline-start: 0;
+        border-top: 1px solid var(--border);
+    }
+}
+
+/* The overlay layer of the reader takes no pointer events, and the value inherits. */
+dialog.note-dialog[open] {
+    pointer-events: auto;
+}
+
+.note-dialog-quote {
+    display: -webkit-box;
+    margin-top: var(--space-3);
+    padding-inline-start: var(--space-3);
+    border-inline-start: 2px solid var(--border-strong);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    line-height: var(--leading-snug);
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+}
+
+.note-dialog-input {
+    margin-top: var(--space-4);
+    min-height: calc(var(--control-h) * 3);
+    max-height: 40dvh;
+}
+
+.note-dialog-error {
+    margin-top: var(--space-2);
+}
+
+/* Remove is away from Save, at the start of the row. */
+.note-dialog-remove {
+    margin-inline-end: auto;
+}
