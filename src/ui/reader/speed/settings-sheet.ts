@@ -149,7 +149,7 @@ function presetMarkup(wpm: number): string {
 
 // All text here is from this file. No text of a book goes into this markup.
 const MARKUP = `
-<dialog class="sheet speed-sheet" aria-labelledby="speed-sheet-title" closedby="any">
+<dialog class="sheet speed-sheet" aria-labelledby="speed-sheet-title" closedby="any" autofocus>
     <header class="sheet-header">
         <h2 class="sheet-title" id="speed-sheet-title">Speed reader</h2>
         <button class="icon-btn" type="button" data-close aria-label="Close">

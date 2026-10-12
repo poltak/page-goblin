@@ -97,7 +97,7 @@ const SLEEP_MENU = `
 </div>`
 
 const VOICE_SHEET = `
-<dialog class="sheet listen-voices" aria-labelledby="listen-voices-title" closedby="any">
+<dialog class="sheet listen-voices" aria-labelledby="listen-voices-title" closedby="any" autofocus>
     <header class="sheet-header">
         <h2 class="sheet-title" id="listen-voices-title">Voice</h2>
         <button class="icon-btn" type="button" aria-label="Close" data-close>

@@ -74,7 +74,7 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
 ]
 
 const DIALOG_MARKUP = `
-<dialog class="modal reader-shortcuts" aria-labelledby="reader-shortcuts-title" closedby="any">
+<dialog class="modal reader-shortcuts" aria-labelledby="reader-shortcuts-title" closedby="any" autofocus>
     <h2 class="modal-title" id="reader-shortcuts-title">Keyboard shortcuts</h2>
     <div
         class="reader-shortcuts-groups"
