@@ -151,6 +151,10 @@ export function createReaderSession(deps: ReaderSessionDeps): ReaderSession {
     let bookmarks: readonly BookmarkRecord[] = [...deps.bookmarks].sort(compareBookmarks)
     let highlights: readonly HighlightRecord[] = [...deps.highlights].sort(compareHighlights)
     let hasSelection = false
+    /** The place where the last move of the progress slider ended, or null. */
+    let sliderLanding: Locator | null = null
+    /** More than 0 while a move of the progress slider runs. */
+    let sliderMoves = 0
     /** Annotation changes run one after the other, so that two fast taps do not mix. */
     let annotationWork: Promise<unknown> = Promise.resolve()
 
@@ -160,6 +164,8 @@ export function createReaderSession(deps: ReaderSessionDeps): ReaderSession {
     /** Goes up with each new view. Callbacks of an older view do nothing. */
     let viewGeneration = 0
 
+    /** The position that goes to storage. It is not always the first visible character. */
+    let savedLocator: Locator = initial
     let progressDirty = false
     let progressTimer: TimerHandle | undefined
     let progressWrites = 0
@@ -328,8 +334,27 @@ export function createReaderSession(deps: ReaderSessionDeps): ReaderSession {
 
     // Position
 
+    /**
+     * The position to save for a relocate.
+     *
+     * The paged view makes its pages again when a font of the book loads or the window gets a
+     * new size. The page that has the saved position can then start at an earlier character.
+     * If that character were saved, a book that the user closes in that moment would open on
+     * the page before at the next open, and one more page back each time. So the saved
+     * position stays while it is on the visible page. A page turn or a jump shows text that
+     * does not have it.
+     *
+     * The scroll view keeps its first line in a new layout, and a short scroll up shows the
+     * saved position lower on the same screen. Its first visible character is always saved.
+     */
+    function progressLocator(info: RelocateInfo): Locator {
+        if (info.page !== null && isLocatorInRange(savedLocator, info.visible)) return savedLocator
+        return info.locator
+    }
+
     function handleRelocate(info: RelocateInfo): void {
         position = info
+        savedLocator = progressLocator(info)
         chapterLengths.set(info.locator.spineIndex, info.chapterLength)
         // A listener can destroy the session, and destroy() must then write this position.
         progressDirty = true
@@ -401,11 +426,12 @@ export function createReaderSession(deps: ReaderSessionDeps): ReaderSession {
 
         progressDirty = false
         const write = ++progressWrites
-        const { spineIndex, offset } = position.locator
+        const { spineIndex, offset } = savedLocator
         const progress: ProgressRecord = {
             bookId: record.id,
             locator: { spineIndex, offset },
-            fraction: currentFraction(),
+            // The same rule as for the fraction that the screen shows.
+            fraction: position.atBookEnd ? 1 : fractionOf(savedLocator),
             updatedAt: now(),
         }
         let saved: Promise<void>
@@ -573,7 +599,22 @@ export function createReaderSession(deps: ReaderSessionDeps): ReaderSession {
         })
         if (!book.spine[spineIndex]) return
         const offset = Math.round(chapterFraction * lengthOf(spineIndex))
-        await view.goTo({ spineIndex, offset })
+        // The user often moves the slider some times to find a place. Only the position
+        // before the first move is remembered, so one step back returns to the page that the
+        // user left.
+        const inRun =
+            sliderMoves > 0 ||
+            (sliderLanding !== null &&
+                position !== null &&
+                compareLocators(position.locator, sliderLanding) === 0)
+        if (!inRun) remember()
+        sliderMoves++
+        try {
+            await view.goTo({ spineIndex, offset })
+        } finally {
+            sliderMoves--
+            sliderLanding = position?.locator ?? null
+        }
     }
 
     // Bookmarks and highlights

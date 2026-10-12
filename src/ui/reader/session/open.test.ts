@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createContentLoader } from '$lib/content'
+import type { EpubBook } from '$lib/epub/types'
 import { openEpub } from '$lib/epub'
 import type { ReaderViewOptions } from '$lib/reader/types'
 import { settings, systemPrefersDark, watchSystemTheme } from '$lib/settings'
@@ -11,6 +11,7 @@ import type { SessionParts } from './open-with'
 const hasReaderModule = Object.keys(import.meta.glob('/src/lib/reader/index.ts')).length > 0
 
 const mocks = vi.hoisted(() => ({
+    createContentLoader: vi.fn((_options: unknown): unknown => 'content loader'),
     createPagedView: vi.fn((_options: unknown): unknown => 'paged view'),
     createScrollView: vi.fn((_options: unknown): unknown => 'scroll view'),
     openSessionWith: vi.fn(async (_options: unknown, _parts: unknown): Promise<unknown> => {
@@ -21,6 +22,11 @@ const mocks = vi.hoisted(() => ({
 vi.mock('$lib/reader', () => ({
     createPagedView: mocks.createPagedView,
     createScrollView: mocks.createScrollView,
+}))
+
+vi.mock('$lib/content', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('$lib/content')>()),
+    createContentLoader: mocks.createContentLoader,
 }))
 
 vi.mock('./open-with', () => ({ openSessionWith: mocks.openSessionWith }))
@@ -40,7 +46,10 @@ describe.skipIf(!hasReaderModule)('openReaderSession', () => {
         const [given, parts] = mocks.openSessionWith.mock.calls[0] as [unknown, SessionParts]
         expect(given).toBe(options)
         expect(parts.openEpub).toBe(openEpub)
-        expect(parts.createContentLoader).toBe(createContentLoader)
+        // The scroll view can show 8 chapters, so the loader keeps more than that.
+        const book = {} as EpubBook
+        expect(parts.createContentLoader({ book })).toBe('content loader')
+        expect(mocks.createContentLoader).toHaveBeenCalledWith({ book, cacheSize: 12 })
         expect(parts.settings).toBe(settings)
         expect(parts.systemDark).toBe(systemPrefersDark)
         expect(parts.watchSystemTheme).toBe(watchSystemTheme)

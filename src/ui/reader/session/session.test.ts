@@ -796,6 +796,78 @@ describe('progress', () => {
         expect(save).toHaveBeenCalledTimes(1)
     })
 
+    describe('a new layout of the same place', () => {
+        const saved: ProgressRecord = {
+            bookId: BOOK_ID,
+            locator: { spineIndex: CHAPTER_2, offset: 700 },
+            fraction: 0.3625,
+            updatedAt: 1,
+        }
+
+        it('keeps the saved position when the page that has it starts earlier', async () => {
+            const { session, views, storage } = await open({ progress: saved })
+            const save = vi.spyOn(storage, 'saveProgress')
+            // The fonts of the book are not loaded, so the page starts at a different place.
+            views.current.relocate(chapter2Page(500, 900))
+            // The screen shows the page as the view gives it.
+            expect(session.position?.locator).toEqual({ spineIndex: CHAPTER_2, offset: 500 })
+
+            await session.destroy()
+            expect(save).toHaveBeenCalledTimes(1)
+            // 100 + 1000 characters before the chapter, and 700 of its 2000 characters.
+            expect(save.mock.calls[0][0]).toMatchObject({
+                locator: { spineIndex: CHAPTER_2, offset: 700 },
+                fraction: 1450 / 4000,
+            })
+        })
+
+        it('keeps the saved position through each new layout', async () => {
+            const { views, storage } = await open({ progress: saved })
+            const save = vi.spyOn(storage, 'saveProgress')
+            views.current.relocate(chapter2Page(500, 900))
+            views.current.relocate(chapter2Page(650, 1050))
+            views.current.relocate(chapter2Page(700, 1100))
+            vi.advanceTimersByTime(PROGRESS_SAVE_DELAY_MS)
+            expect(save.mock.calls[0][0].locator).toEqual({ spineIndex: CHAPTER_2, offset: 700 })
+        })
+
+        it('saves the first character of the page after a page turn', async () => {
+            const { views, storage } = await open({ progress: saved })
+            const save = vi.spyOn(storage, 'saveProgress')
+            views.current.relocate(chapter2Page(500, 900))
+            views.current.relocate(chapter2Page(900, 1300))
+            vi.advanceTimersByTime(PROGRESS_SAVE_DELAY_MS)
+            expect(save.mock.calls[0][0].locator).toEqual({ spineIndex: CHAPTER_2, offset: 900 })
+        })
+
+        it('saves the first character of the page after a turn to the page before', async () => {
+            const { views, storage } = await open({ progress: saved })
+            const save = vi.spyOn(storage, 'saveProgress')
+            views.current.relocate(chapter2Page(700, 1100))
+            // The end of a range is exclusive, so this page does not have the saved position.
+            views.current.relocate(chapter2Page(300, 700))
+            vi.advanceTimersByTime(PROGRESS_SAVE_DELAY_MS)
+            expect(save.mock.calls[0][0].locator).toEqual({ spineIndex: CHAPTER_2, offset: 300 })
+        })
+
+        it('saves the first visible character in the scroll view', async () => {
+            const { views, storage } = await open({ progress: saved })
+            const save = vi.spyOn(storage, 'saveProgress')
+            // The user scrolled up by some lines. The saved position is lower on the screen.
+            views.current.relocate({ ...chapter2Page(500, 900), page: null, pageCount: null })
+            vi.advanceTimersByTime(PROGRESS_SAVE_DELAY_MS)
+            expect(save.mock.calls[0][0].locator).toEqual({ spineIndex: CHAPTER_2, offset: 500 })
+        })
+
+        it('saves the position of a page with no text', async () => {
+            const { views, storage } = await open({ progress: saved })
+            const save = vi.spyOn(storage, 'saveProgress')
+            views.current.relocate(chapter2Page(700, 700))
+            vi.advanceTimersByTime(PROGRESS_SAVE_DELAY_MS)
+            expect(save.mock.calls[0][0].locator).toEqual({ spineIndex: CHAPTER_2, offset: 700 })
+        })
+    })
+
     it('never writes before the first relocate', async () => {
         const { session, storage } = await open({
             progress: {
@@ -1048,6 +1120,59 @@ describe('fractions', () => {
         // 0.4 of 4000 characters is 1600: 500 characters into chapter 2, one quarter of it.
         await session.goToFraction(0.4)
         expect(views.current.goTo).toHaveBeenLastCalledWith({ spineIndex: CHAPTER_2, offset: 1000 })
+    })
+
+    it('remembers the position before a move of the slider', async () => {
+        const { session, views } = await open()
+        const view = views.current
+        view.relocate(chapter2Page(0, 400, 4000))
+        expect(session.canGoBack).toBe(false)
+
+        await session.goToFraction(0.4)
+        expect(session.canGoBack).toBe(true)
+        view.relocate(chapter2Page(1000, 1400, 4000))
+
+        await session.back()
+        expect(view.goTo).toHaveBeenLastCalledWith({ spineIndex: CHAPTER_2, offset: 0 })
+        expect(session.canGoBack).toBe(false)
+    })
+
+    it('remembers one position for a run of slider moves', async () => {
+        const { session, views } = await open()
+        const view = views.current
+        view.relocate(chapter2Page(0, 400, 4000))
+
+        vi.mocked(view.goTo).mockImplementationOnce(async () => {
+            view.relocate(chapter2Page(1000, 1400, 4000))
+        })
+        await session.goToFraction(0.4)
+        vi.mocked(view.goTo).mockImplementationOnce(async () => {
+            view.relocate(chapter2Page(2000, 2400, 4000))
+        })
+        await session.goToFraction(0.5)
+
+        await session.back()
+        expect(view.goTo).toHaveBeenLastCalledWith({ spineIndex: CHAPTER_2, offset: 0 })
+        expect(session.canGoBack).toBe(false)
+    })
+
+    it('remembers a new position for a slider move after a page turn', async () => {
+        const { session, views } = await open()
+        const view = views.current
+        view.relocate(chapter2Page(0, 400, 4000))
+
+        vi.mocked(view.goTo).mockImplementationOnce(async () => {
+            view.relocate(chapter2Page(1000, 1400, 4000))
+        })
+        await session.goToFraction(0.4)
+        // The user reads on from the new place.
+        view.relocate(chapter2Page(1400, 1800, 4000))
+        await session.goToFraction(0.5)
+
+        await session.back()
+        expect(view.goTo).toHaveBeenLastCalledWith({ spineIndex: CHAPTER_2, offset: 1400 })
+        await session.back()
+        expect(view.goTo).toHaveBeenLastCalledWith({ spineIndex: CHAPTER_2, offset: 0 })
         expect(session.canGoBack).toBe(false)
     })
 

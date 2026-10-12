@@ -20,7 +20,41 @@ export interface SessionParts extends Pick<
     createContentLoader(options: { book: EpubBook }): ContentLoader
 }
 
+/**
+ * The options of `openSessionWith`. With `signal` the caller can stop an open that runs, for
+ * example when the user leaves the reader before the book is on screen.
+ */
+export interface OpenSessionOptions extends OpenReaderSessionOptions {
+    /**
+     * Stops the open. The promise then rejects with an error that has the name 'AbortError',
+     * and nothing stays open.
+     */
+    signal?: AbortSignal
+}
+
+export const ABORT_ERROR_NAME = 'AbortError'
+
 function ignore(): void {}
+
+function abortError(): Error {
+    const error = new Error('The open was stopped.')
+    error.name = ABORT_ERROR_NAME
+    return error
+}
+
+function throwIfAborted(signal: AbortSignal | undefined): void {
+    if (signal?.aborted) throw abortError()
+}
+
+/** Settles as `work` does, or rejects at once when the signal aborts first. */
+function untilAborted<T>(work: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+    if (!signal) return work
+    return new Promise<T>((resolve, reject) => {
+        const onAbort = (): void => reject(abortError())
+        signal.addEventListener('abort', onAbort, { once: true })
+        work.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort))
+    })
+}
 
 /** Settles when the view that the session has now showed its first chapter, or failed. */
 function whenViewReady(session: ReaderSession): Promise<void> {
@@ -51,7 +85,7 @@ function whenViewReady(session: ReaderSession): Promise<void> {
  * chapter when the book does not open. Nothing stays open after a rejection.
  */
 export async function openSessionWith(
-    { bookId, storage, container }: OpenReaderSessionOptions,
+    { bookId, storage, container, signal }: OpenSessionOptions,
     parts: SessionParts,
 ): Promise<ReaderSession> {
     // The saved position and annotations do not need the book file, so these reads start now.
@@ -63,13 +97,16 @@ export async function openSessionWith(
     saved.catch(ignore)
 
     const [record, file] = await Promise.all([storage.getBook(bookId), storage.getFile(bookId)])
+    throwIfAborted(signal)
     if (!record || !file) throw new Error('book-not-found')
 
     const book = await parts.openEpub(file)
     const content = parts.createContentLoader({ book })
     let session: ReaderSession | undefined
     try {
+        throwIfAborted(signal)
         const [[progress, bookmarks, highlights]] = await Promise.all([saved, content.prepare()])
+        throwIfAborted(signal)
         session = createReaderSession({
             record,
             book,
@@ -85,7 +122,9 @@ export async function openSessionWith(
             watchSystemTheme: parts.watchSystemTheme,
             now: parts.now,
         })
-        await whenViewReady(session)
+        // A view in an element that is not on screen has no size, and it waits for one with
+        // no time limit. So the wait must stop when the caller stops the open.
+        await untilAborted(whenViewReady(session), signal)
     } catch (error) {
         if (session) await session.destroy()
         else content.dispose()

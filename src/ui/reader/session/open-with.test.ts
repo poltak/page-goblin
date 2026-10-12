@@ -82,8 +82,8 @@ function makeParts(changes: Partial<SessionParts> = {}): SessionParts {
     }
 }
 
-function openBook(parts: SessionParts = makeParts()): Promise<ReaderSession> {
-    const opened = openSessionWith({ bookId: BOOK_ID, storage, container }, parts)
+function openBook(parts: SessionParts = makeParts(), signal?: AbortSignal): Promise<ReaderSession> {
+    const opened = openSessionWith({ bookId: BOOK_ID, storage, container, signal }, parts)
     opened.then(
         (session) => sessions.push(session),
         () => {},
@@ -336,6 +336,68 @@ describe('openSessionWith', () => {
         const session = await opened
         expect(session.view).toBe(views.current)
         expect(views.current.mode).toBe('scroll')
+    })
+
+    describe('a signal that stops the open', () => {
+        it('destroys the view and the loader when the view waits for its first chapter', async () => {
+            await addBook()
+            views = createFakeViews({ manualReady: true })
+            const update = vi.spyOn(storage, 'updateBook')
+            const stop = new AbortController()
+            const opened = openBook(makeParts(), stop.signal)
+            const result = expect(opened).rejects.toMatchObject({ name: 'AbortError' })
+            await settle()
+            expect(views.views).toHaveLength(1)
+
+            // The view never gets ready, as a view in a hidden element does.
+            stop.abort()
+            await result
+            expect(views.current.isDestroyed).toBe(true)
+            expect(loaders[0].dispose).toHaveBeenCalledTimes(1)
+            expect(update).not.toHaveBeenCalled()
+        })
+
+        it('makes no view when the signal aborts while the book file opens', async () => {
+            await addBook()
+            const stop = new AbortController()
+            let finish!: (book: EpubBook) => void
+            const parts = makeParts({
+                openEpub: vi.fn(() => new Promise<EpubBook>((resolve) => (finish = resolve))),
+            })
+            const result = expect(openBook(parts, stop.signal)).rejects.toMatchObject({
+                name: 'AbortError',
+            })
+            await settle()
+            stop.abort()
+            finish(book)
+            await result
+
+            expect(parts.createView).not.toHaveBeenCalled()
+            expect(loaders[0].dispose).toHaveBeenCalledTimes(1)
+        })
+
+        it('reads no book file for a signal that is aborted at the start', async () => {
+            await addBook()
+            const stop = new AbortController()
+            stop.abort()
+            const parts = makeParts()
+            await expect(openBook(parts, stop.signal)).rejects.toMatchObject({
+                name: 'AbortError',
+            })
+            expect(parts.openEpub).not.toHaveBeenCalled()
+        })
+
+        it('opens the book as usual when the signal does not abort', async () => {
+            await addBook()
+            const stop = new AbortController()
+            const session = await openBook(makeParts(), stop.signal)
+            expect(session.view).toBe(views.current)
+
+            // An abort after the open does nothing to the session.
+            stop.abort()
+            await settle()
+            expect(views.current.isDestroyed).toBe(false)
+        })
     })
 
     it('rejects with the error of the EPUB parser', async () => {
