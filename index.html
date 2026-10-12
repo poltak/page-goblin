@@ -4,9 +4,29 @@
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
         <title>Web eReader</title>
+        <meta
+            name="description"
+            content="A local-first EPUB reader and speed reader. Your books stay on your device."
+        />
+        <meta name="color-scheme" content="light dark" />
+        <meta name="theme-color" content="#fbfaf8" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="apple-mobile-web-app-title" content="eReader" />
+        <link rel="manifest" href="./manifest.webmanifest" />
+        <link rel="icon" href="./icons/favicon.svg" type="image/svg+xml" />
+        <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+        <!-- Sets the theme before the first paint. It must stay a blocking script. -->
+        <script src="./theme-init.js"></script>
+        <link rel="stylesheet" href="/src/styles/app.css" />
     </head>
     <body>
-        <div id="app"></div>
+        <div id="app">
+            <main id="library-view"></main>
+            <div id="reader-view" hidden></div>
+        </div>
+        <div id="toasts" aria-live="polite"></div>
         <script type="module" src="/src/main.ts"></script>
     </body>
 </html>
