@@ -10,6 +10,18 @@ import type {
 
 export type LibraryStorageOptions = DatabaseOptions
 
+/**
+ * `LibraryStorage` with the write that repairs a book whose stored file is missing. The
+ * import of a book uses it. See `importBook`.
+ */
+export interface LibraryFileStorage extends LibraryStorage {
+    /**
+     * Writes the file of a book that is in the library, in the place of the file that is
+     * there. Does nothing when the library does not have the book.
+     */
+    putFile(id: string, file: Blob): Promise<void>
+}
+
 interface ReadOptions<T> {
     store: StoreName
     failureMessage: string
@@ -36,7 +48,7 @@ function compareHighlights(a: HighlightRecord, b: HighlightRecord): number {
     )
 }
 
-export function createLibraryStorage(options: LibraryStorageOptions = {}): LibraryStorage {
+export function createLibraryStorage(options: LibraryStorageOptions = {}): LibraryFileStorage {
     const database = createDatabase(options)
 
     function read<T>({ store, failureMessage, request }: ReadOptions<T>): Promise<T> {
@@ -136,6 +148,21 @@ export function createLibraryStorage(options: LibraryStorageOptions = {}): Libra
                 store: 'files',
                 failureMessage: 'Unable to read the book file.',
                 request: (store) => store.get(id),
+            }),
+
+        putFile: (id, file) =>
+            database.run({
+                stores: ['books', 'files'],
+                mode: 'readwrite',
+                failureMessage: 'Unable to save the book file.',
+                work: (transaction) => {
+                    // The user can remove the book while the import reads the file. A file
+                    // with no book record would stay in the storage, and nothing removes it.
+                    const key = transaction.objectStore('books').getKey(id)
+                    key.onsuccess = () => {
+                        if (key.result !== undefined) transaction.objectStore('files').put(file, id)
+                    }
+                },
             }),
 
         getCover: (id) =>

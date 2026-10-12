@@ -1,15 +1,9 @@
 import { Blob as NodeBlob } from 'node:buffer'
 import { forceCloseDatabase, IDBFactory } from 'fake-indexeddb'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createLibraryStorage } from './library-storage'
+import { createLibraryStorage, type LibraryFileStorage } from './library-storage'
 import { trackFactory, type TrackedFactory } from './testing/tracked-factory'
-import type {
-    BookmarkRecord,
-    BookRecord,
-    HighlightRecord,
-    LibraryStorage,
-    ProgressRecord,
-} from './types'
+import type { BookmarkRecord, BookRecord, HighlightRecord, ProgressRecord } from './types'
 
 function makeBook(id: string, changes: Partial<BookRecord> = {}): BookRecord {
     return {
@@ -89,7 +83,7 @@ function hasBlob(value: unknown): boolean {
 
 describe('createLibraryStorage', () => {
     let tracked: TrackedFactory
-    let storage: LibraryStorage
+    let storage: LibraryFileStorage
 
     beforeEach(() => {
         // A jsdom Blob does not survive structuredClone, which fake-indexeddb uses to store a
@@ -284,6 +278,35 @@ describe('createLibraryStorage', () => {
             await storage.deleteBook('missing')
 
             expect(await storage.listBooks()).toEqual([makeBook('a')])
+        })
+
+        it('writes the file of a book again and changes nothing else', async () => {
+            await addBook('a')
+            await addBook('b')
+            await storage.saveProgress(makeProgress('a'))
+            tracked.transactions.length = 0
+
+            await storage.putFile('a', new Blob(['a new file'], { type: 'application/epub+zip' }))
+
+            expect(tracked.transactions).toEqual([
+                { stores: ['books', 'files'], mode: 'readwrite' },
+            ])
+            const file = await storage.getFile('a')
+            expect(file?.type).toBe('application/epub+zip')
+            expect(await file?.text()).toBe('a new file')
+            expect(await storage.getBook('a')).toEqual(makeBook('a'))
+            expect(await (await storage.getCover('a'))?.text()).toBe('cover of a')
+            expect(await storage.getProgress('a')).toEqual(makeProgress('a'))
+            expect(await (await storage.getFile('b'))?.text()).toBe('file of b')
+        })
+
+        it('writes no file for a book that is not there', async () => {
+            await addBook('a')
+
+            await storage.putFile('missing', new Blob(['a file']))
+
+            expect(await storage.getFile('missing')).toBeUndefined()
+            expect(await (await storage.getFile('a'))?.text()).toBe('file of a')
         })
     })
 

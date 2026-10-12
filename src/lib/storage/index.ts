@@ -8,7 +8,7 @@
 
 export { DATABASE_NAME, DATABASE_VERSION } from './db'
 export { createLibraryStorage } from './library-storage'
-export type { LibraryStorageOptions } from './library-storage'
+export type { LibraryFileStorage, LibraryStorageOptions } from './library-storage'
 export { importBook } from './import'
 export type { ImportBookOptions, ImportPhase, ImportProgress, ImportResult } from './import'
 export { estimateTextStats } from './text-stats'

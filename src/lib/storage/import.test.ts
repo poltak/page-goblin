@@ -4,10 +4,11 @@ import { IDBFactory } from 'fake-indexeddb'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createFakeBook, type FakeBookOptions } from '$lib/epub/testing/fake-book'
 import { EpubError, type EpubBook } from '$lib/epub/types'
-import { importBook, type ImportProgress } from './import'
+import { DATABASE_NAME } from './db'
+import { importBook, type ImportBookOptions, type ImportProgress } from './import'
 import { createLibraryStorage } from './library-storage'
 import { estimateTextStats } from './text-stats'
-import type { LibraryStorage, NewBook } from './types'
+import type { BookRecord, LibraryStorage, NewBook } from './types'
 
 const UUID_V4 = /^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/
 
@@ -46,6 +47,8 @@ function makeBook(changes: Partial<FakeBookOptions> = {}): EpubBook {
 }
 
 describe('importBook', () => {
+    let factory: IDBFactory
+    // The type that the app gives to the import. The object also has `putFile`.
     let storage: LibraryStorage
 
     beforeEach(() => {
@@ -53,8 +56,27 @@ describe('importBook', () => {
         // value. The Blob and File of Node do, as a Blob does in a browser.
         vi.stubGlobal('Blob', NodeBlob)
         vi.stubGlobal('File', NodeFile)
-        storage = createLibraryStorage({ indexedDB: new IDBFactory() })
+        factory = new IDBFactory()
+        storage = createLibraryStorage({ indexedDB: factory })
     })
+
+    /** Remove only the file of a book, as a browser does that lost a part of its data. */
+    function deleteStoredFile(id: string): Promise<void> {
+        return new Promise((resolve, reject) => {
+            const request = factory.open(DATABASE_NAME)
+            request.onerror = () => reject(request.error)
+            request.onsuccess = () => {
+                const db = request.result
+                const transaction = db.transaction('files', 'readwrite')
+                transaction.objectStore('files').delete(id)
+                transaction.onerror = () => reject(transaction.error)
+                transaction.oncomplete = () => {
+                    db.close()
+                    resolve()
+                }
+            }
+        })
+    }
 
     afterEach(() => {
         storage.close()
@@ -238,6 +260,165 @@ describe('importBook', () => {
             expect(second.book.id).not.toBe(first.book.id)
             expect(second.book.fileHash).not.toBe(first.book.fileHash)
             expect(await storage.listBooks()).toHaveLength(2)
+        })
+    })
+
+    describe('duplicate of a book whose stored file is missing', () => {
+        const record = { id: 'the-book', title: 'The Title' } as BookRecord
+
+        /** A storage that has the book. The test gives the answer of `getFile`. */
+        function storageWith(getFile: () => Promise<Blob | undefined>) {
+            return {
+                findBookByHash: vi.fn(async () => record),
+                addBook: vi.fn(async (_book: NewBook) => undefined),
+                getFile: vi.fn(getFile),
+                putFile: vi.fn(async (_id: string, _file: Blob) => undefined),
+            } satisfies ImportBookOptions['storage']
+        }
+
+        it('stores the file again and keeps the record, the cover and the position', async () => {
+            const open = vi.fn(async () => makeBook())
+            const first = await importBook({ file: makeFile(), storage, open, now: () => 1000 })
+            const { id } = first.book
+            const progress = {
+                bookId: id,
+                locator: { spineIndex: 1, offset: 5 },
+                fraction: 0.5,
+                updatedAt: 1500,
+            }
+            await storage.saveProgress(progress)
+            await deleteStoredFile(id)
+            expect(await storage.getFile(id)).toBeUndefined()
+
+            const second = await importBook({
+                file: makeFile('the bytes of the file', 'a-copy.epub'),
+                storage,
+                open,
+                now: () => 2000,
+            })
+
+            expect(second).toEqual({ book: first.book, duplicate: true })
+            expect(open).toHaveBeenCalledOnce()
+            const stored = await storage.getFile(id)
+            expect(stored?.type).toBe('application/epub+zip')
+            expect(await stored?.text()).toBe('the bytes of the file')
+            expect(await storage.listBooks()).toEqual([first.book])
+            expect(await storage.getProgress(id)).toEqual(progress)
+            expect((await storage.getCover(id))?.type).toBe('image/jpeg')
+        })
+
+        it('reports only the hash phase', async () => {
+            const { book } = await importBook({
+                file: makeFile(),
+                storage,
+                open: async () => makeBook(),
+            })
+            await deleteStoredFile(book.id)
+            const events: ImportProgress[] = []
+
+            await importBook({
+                file: makeFile(),
+                storage,
+                open: async () => makeBook(),
+                onProgress: (progress) => events.push(progress),
+            })
+
+            expect(events).toEqual([
+                { phase: 'hash', done: 0, total: 1 },
+                { phase: 'hash', done: 1, total: 1 },
+            ])
+        })
+
+        it('does not write the file when the library has it', async () => {
+            const fake = storageWith(async () => new Blob(['the bytes of the file']))
+
+            const result = await importBook({
+                file: makeFile(),
+                storage: fake,
+                open: async () => makeBook(),
+            })
+
+            expect(result).toEqual({ book: record, duplicate: true })
+            expect(fake.getFile).toHaveBeenCalledWith('the-book')
+            expect(fake.putFile).not.toHaveBeenCalled()
+            expect(fake.addBook).not.toHaveBeenCalled()
+        })
+
+        it('gives the copy of the added file to the storage', async () => {
+            const fake = storageWith(async () => undefined)
+
+            const result = await importBook({
+                file: makeFile(),
+                storage: fake,
+                open: async () => makeBook(),
+            })
+
+            expect(result).toEqual({ book: record, duplicate: true })
+            expect(fake.putFile).toHaveBeenCalledOnce()
+            const [id, copy] = fake.putFile.mock.calls[0]
+            expect(id).toBe('the-book')
+            expect(copy.type).toBe('application/epub+zip')
+            expect(await copy.text()).toBe('the bytes of the file')
+            expect(fake.addBook).not.toHaveBeenCalled()
+        })
+
+        it('stores the file again when the browser cannot read the stored file', async () => {
+            const lost = new Blob(['the bytes of the file'])
+            vi.spyOn(lost, 'slice').mockReturnValue({
+                arrayBuffer: () => Promise.reject(new DOMException('Lost.', 'NotReadableError')),
+            } as Blob)
+            const fake = storageWith(async () => lost)
+
+            await importBook({ file: makeFile(), storage: fake, open: async () => makeBook() })
+
+            expect(fake.putFile).toHaveBeenCalledOnce()
+        })
+
+        it('stores the file again when the stored file has a different size', async () => {
+            const fake = storageWith(async () => new Blob([]))
+
+            await importBook({ file: makeFile(), storage: fake, open: async () => makeBook() })
+
+            expect(fake.putFile).toHaveBeenCalledOnce()
+        })
+
+        it('stores the file again when the storage cannot give the stored file', async () => {
+            const fake = storageWith(() => Promise.reject(new Error('Unable to read.')))
+
+            await importBook({ file: makeFile(), storage: fake, open: async () => makeBook() })
+
+            expect(fake.putFile).toHaveBeenCalledOnce()
+        })
+
+        it('lets an error of the write pass to the caller', async () => {
+            const error = new DOMException('No space.', 'QuotaExceededError')
+            const fake = storageWith(async () => undefined)
+            fake.putFile.mockRejectedValue(error)
+
+            const pending = importBook({
+                file: makeFile(),
+                storage: fake,
+                open: async () => makeBook(),
+            })
+
+            await expect(pending).rejects.toBe(error)
+        })
+
+        it('gives the record when the storage cannot write a file', async () => {
+            const getFile = vi.fn(async () => undefined)
+
+            const result = await importBook({
+                file: makeFile(),
+                storage: {
+                    findBookByHash: async () => record,
+                    addBook: async () => undefined,
+                    getFile,
+                },
+                open: async () => makeBook(),
+            })
+
+            expect(result).toEqual({ book: record, duplicate: true })
+            expect(getFile).not.toHaveBeenCalled()
         })
     })
 
