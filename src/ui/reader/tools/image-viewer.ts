@@ -59,7 +59,7 @@ interface SafariGestureEvent extends UIEvent {
 
 // The black theme gives the viewer a dark background and light controls on each theme.
 const createViewer = templateOf<HTMLDialogElement>(`
-<dialog class="img-viewer" data-theme="black" aria-label="Image">
+<dialog class="img-viewer" data-theme="black" aria-label="Image" autofocus>
     <div class="img-viewer-stage">
         <img class="img-viewer-image" alt="" draggable="false" />
     </div>
