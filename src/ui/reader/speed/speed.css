@@ -1,0 +1,369 @@
+/*
+ * The speed reader overlay. Class selectors only, because this file is not in a cascade layer
+ * and wins over each component rule.
+ *
+ * The word is the only thing that moves. A new word changes five Text nodes and, for a long
+ * word, one transform. Nothing here animates a layout property.
+ *
+ * word-fit.ts and context.ts have copies of some values of this file: the pivot place, the
+ * font of the word and the size of the context text. Change them together.
+ */
+
+.speed {
+    /* A comfortable width for the stage and the controls on a desktop. */
+    --speed-max: 720px;
+    /* The place of the pivot letter from the left edge of the word line. word-fit.ts has it too. */
+    --speed-pivot: 38%;
+    /* The script sets this from the word size setting. */
+    --speed-word-size: 48px;
+
+    position: absolute;
+    inset: 0;
+    /* Above the other parts in the host layer. */
+    z-index: var(--z-raised);
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+    color: var(--fg);
+    overflow: hidden;
+    /* The host layer takes no pointer events itself. */
+    pointer-events: auto;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+/* ---------- Top row ---------- */
+
+.speed-top {
+    min-height: calc(var(--toolbar-h) + var(--safe-top));
+    padding-top: var(--safe-top);
+}
+
+.speed-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0 var(--space-2);
+    color: var(--fg-faint);
+    font-size: var(--text-sm);
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* The label does not fit next to the chapter title on a phone. The arrow stays. */
+@media (max-width: 479px) {
+    .speed-done {
+        width: var(--control-h);
+        padding: 0;
+
+        & > span {
+            display: none;
+        }
+
+        & > .icon:first-child:not(:only-child) {
+            margin-inline-start: 0;
+        }
+    }
+}
+
+/* The line keeps its height when it is empty, so a message does not move the stage. */
+.speed-notice {
+    flex: none;
+    height: calc(var(--text-lg) * var(--leading-normal));
+    padding-inline: max(var(--space-4), var(--safe-left)) max(var(--space-4), var(--safe-right));
+    color: var(--fg-muted);
+    font-size: var(--text-lg);
+    line-height: var(--leading-normal);
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity var(--dur-base) var(--ease-out);
+
+    &.is-shown {
+        opacity: 1;
+    }
+}
+
+/* ---------- Stage ---------- */
+
+.speed-stage {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    justify-content: center;
+    gap: var(--space-4);
+    width: 100%;
+    max-width: var(--speed-max);
+    min-height: 0;
+    margin-inline: auto;
+    /* speed/controller.ts takes the same padding from the width before the first measurement. */
+    padding: var(--space-4) max(var(--space-4), var(--safe-right)) var(--space-4)
+        max(var(--space-4), var(--safe-left));
+    overflow: hidden;
+    cursor: pointer;
+    /* A small move of the finger during a hold must not start a scroll, which cancels the hold. */
+    touch-action: none;
+    -webkit-touch-callout: none;
+
+    &:focus-visible {
+        outline-offset: calc(var(--space-2) * -1);
+    }
+}
+
+.speed-focus {
+    position: relative;
+    flex: none;
+    padding-block: var(--space-5);
+    font-size: var(--speed-word-size);
+
+    /*
+     * The two guide marks. The pivot letter starts at the pivot place, so its middle is a
+     * little to the right.
+     */
+    &::before,
+    &::after {
+        content: '';
+        position: absolute;
+        left: calc(var(--speed-pivot) + 0.27em);
+        width: calc(var(--space-1) / 2);
+        height: var(--space-3);
+        margin-left: calc(var(--space-1) / -4);
+        border-radius: var(--radius-full);
+        background: var(--border-strong);
+    }
+
+    &::before {
+        top: 0;
+    }
+
+    &::after {
+        bottom: 0;
+    }
+}
+
+/*
+ * The part before the pivot letter ends at the pivot place, and the pivot letter starts there.
+ * The left edge of the pivot letter thus never moves, with no measurement of the text.
+ */
+.speed-word {
+    position: relative;
+    height: calc(1em * var(--leading-snug));
+    padding-left: var(--speed-pivot);
+    font-family: var(--font-ui);
+    font-weight: var(--weight-medium);
+    font-variant-numeric: normal;
+    line-height: var(--leading-snug);
+    letter-spacing: 0;
+    white-space: pre;
+    /* A long word gets smaller around the pivot place. */
+    transform-origin: var(--speed-pivot) 50%;
+    /*
+     * A new word does not start a layout outside the line. The size of the line does not come
+     * from the word, so the browser can stop at this box. There is no paint containment,
+     * because a long word goes outside the box before the script makes it smaller.
+     */
+    contain: size layout style;
+}
+
+.speed-word-before {
+    position: absolute;
+    top: 0;
+    right: calc(100% - var(--speed-pivot));
+}
+
+.speed-word-pivot {
+    color: var(--accent-text);
+}
+
+/* With no pivot highlight the word is centred and has no marks. */
+.speed[data-pivot='off'] {
+    & .speed-focus::before,
+    & .speed-focus::after {
+        display: none;
+    }
+
+    /*
+     * A flex line keeps a word in the centre also when it is wider than the line. A centred
+     * text line starts such a word at the left edge, and the smaller word is then off centre.
+     */
+    & .speed-word {
+        display: flex;
+        justify-content: center;
+        padding-left: 0;
+        transform-origin: 50% 50%;
+    }
+
+    & .speed-word-before {
+        position: static;
+    }
+
+    & .speed-word-pivot {
+        color: inherit;
+    }
+}
+
+/* Two lines, cut at a line edge. The fixed size keeps the layout of a new word inside the block. */
+.speed-context {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    height: calc(2em * var(--leading-normal));
+    color: var(--fg-faint);
+    font-size: var(--text-md);
+    line-height: var(--leading-normal);
+    text-align: center;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    contain: strict;
+}
+
+/* The words nearest to the word on screen are at the bottom, so the cut is at the top. */
+.speed-context-before {
+    justify-content: flex-end;
+}
+
+/* ---------- Progress, status and controls ---------- */
+
+.speed-bottom {
+    flex: none;
+    width: 100%;
+    max-width: var(--speed-max);
+    margin-inline: auto;
+    padding: 0 max(var(--space-4), var(--safe-right)) max(var(--space-4), var(--safe-bottom))
+        max(var(--space-4), var(--safe-left));
+}
+
+.speed-status {
+    height: calc(var(--text-sm) * var(--leading-normal));
+    margin-top: var(--space-2);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    line-height: var(--leading-normal);
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* The play button is in the middle of the row. On a phone the speed control has its own row. */
+.speed-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto auto minmax(0, 1fr);
+    grid-template-areas:
+        'rewind previous play next .'
+        'rate rate rate rate rate';
+    align-items: center;
+    justify-items: center;
+    gap: var(--space-3) var(--space-2);
+    margin-top: var(--space-3);
+
+    & > .icon-btn {
+        width: var(--space-12);
+        height: var(--space-12);
+    }
+
+    @media (min-width: 600px) {
+        grid-template-areas: 'rewind previous play next rate';
+    }
+}
+
+.speed-rewind {
+    grid-area: rewind;
+    justify-self: end;
+    /* A hold on a touch screen must not start a scroll. */
+    touch-action: none;
+}
+
+.speed-previous {
+    grid-area: previous;
+}
+
+.speed-play {
+    grid-area: play;
+    width: var(--space-16);
+    height: var(--space-16);
+    min-height: 0;
+    padding: 0;
+    border-radius: var(--radius-full);
+}
+
+.speed-next {
+    grid-area: next;
+}
+
+.speed-rate {
+    grid-area: rate;
+
+    /* The value keeps its width from 50 to 1000, so the buttons do not move. */
+    & > .stepper-value {
+        min-width: 9ch;
+        white-space: nowrap;
+    }
+
+    /* A hold repeats the step. A small move of the finger must not end it. */
+    & > .stepper-btn {
+        touch-action: none;
+    }
+
+    @media (min-width: 600px) {
+        justify-self: start;
+        margin-inline-start: var(--space-2);
+    }
+}
+
+/* A low window, for example a phone on its side: the word and the controls have priority. */
+@media (max-height: 520px) {
+    .speed-context,
+    .speed-notice:not(.is-shown) {
+        display: none;
+    }
+
+    .speed-stage {
+        padding-block: 0;
+    }
+
+    .speed-focus {
+        padding-block: var(--space-4);
+    }
+
+    .speed-controls {
+        margin-top: var(--space-1);
+    }
+
+    .speed-bottom {
+        padding-bottom: max(var(--space-2), var(--safe-bottom));
+    }
+}
+
+/* ---------- Settings sheet ---------- */
+
+/* The five presets share one row, also on a small phone. */
+.speed-presets {
+    flex-wrap: nowrap;
+
+    & > .btn {
+        flex: 1 1 0;
+        min-width: 0;
+        padding-inline: var(--space-1);
+    }
+}
+
+.speed-sheet-actions {
+    display: grid;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
+}
+
+/* ---------- Reduced motion ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+    .speed,
+    .speed *,
+    .speed *::before,
+    .speed *::after {
+        transition: none;
+    }
+}
