@@ -50,6 +50,12 @@ const EDGE_PX = 24
 const EDGE_MS = 260
 const RESIZE_DELAY_MS = 80
 const MEASURE_DELAY_MS = 60
+/** The wait after the last layout change, before the neighbour chapters load again. */
+const NEIGHBOUR_DELAY_MS = 250
+/** The elements of the book text that the Tab key stops at. */
+const FOCUSABLE = 'a[href], [tabindex="0"], summary'
+/** The settings that change only colours or the page turn. All others move the text. */
+const NO_LAYOUT_KEYS: readonly (keyof Appearance)[] = ['theme', 'pageTurn']
 
 type Side = 'prev' | 'next'
 type MotionKind = 'slide' | 'fade' | 'none'
@@ -139,6 +145,12 @@ function requestIdle(callback: () => void): () => void {
     return () => clearTimeout(handle)
 }
 
+/** True when the line breaks of the text can be different with the new settings. */
+function changesLayout(before: Appearance, after: Appearance): boolean {
+    const keys = Object.keys({ ...before, ...after }) as (keyof Appearance)[]
+    return keys.some((key) => before[key] !== after[key] && !NO_LAYOUT_KEYS.includes(key))
+}
+
 function sameInfo(a: RelocateInfo, b: RelocateInfo): boolean {
     return (
         a.locator.spineIndex === b.locator.spineIndex &&
@@ -217,6 +229,8 @@ export function createPagedView(options: ReaderViewOptions): ReaderView {
     let resizeTimer: ReturnType<typeof setTimeout> | null = null
     let measureTimer: ReturnType<typeof setTimeout> | null = null
     let cancelIdle: (() => void) | null = null
+    /** Changes with each call of `scheduleNeighbours`. */
+    let neighbourRun = 0
 
     const wheel = createWheelAccumulator()
     const active = createActiveMarks(() => mounted.map((entry) => entry.frame))
@@ -280,6 +294,8 @@ export function createPagedView(options: ReaderViewOptions): ReaderView {
         }
         frame.shadow.addEventListener('load', onMedia, true)
         frame.shadow.addEventListener('error', onMedia, true)
+        // A focus move between two links of one chapter does not leave the shadow root.
+        frame.shadow.addEventListener('focusin', onFocusIn)
 
         const entry: Entry = {
             frame,
@@ -291,6 +307,7 @@ export function createPagedView(options: ReaderViewOptions): ReaderView {
             release() {
                 frame.shadow.removeEventListener('load', onMedia, true)
                 frame.shadow.removeEventListener('error', onMedia, true)
+                frame.shadow.removeEventListener('focusin', onFocusIn)
             },
         }
 
@@ -462,13 +479,24 @@ export function createPagedView(options: ReaderViewOptions): ReaderView {
         return slot.promise
     }
 
-    function scheduleNeighbours(): void {
+    /** Load the neighbour chapters when the page is idle. A delay comes before the idle wait. */
+    function scheduleNeighbours(delayMs = 0): void {
         cancelIdle?.()
+        const run = ++neighbourRun
+        if (delayMs > 0) {
+            const timer = setTimeout(() => {
+                cancelIdle = null
+                scheduleNeighbours()
+            }, delayMs)
+            cancelIdle = () => clearTimeout(timer)
+            return
+        }
         cancelIdle = requestIdle(() => {
             cancelIdle = null
             if (destroyed || !current) return
             void ensureSlot('next').then(() => {
-                if (destroyed || !current) return
+                // A newer call has its own wait. This one must not replace it.
+                if (destroyed || !current || run !== neighbourRun) return
                 cancelIdle = requestIdle(() => {
                     cancelIdle = null
                     if (!destroyed && current) void ensureSlot('prev')
@@ -543,11 +571,26 @@ export function createPagedView(options: ReaderViewOptions): ReaderView {
                 lag: pageOfOffset(current, offset) - page,
             }
         }
+        dropHiddenFocus()
         emit(info)
     }
 
     function settleIfPending(): void {
         if (pendingSettle !== null) settle(false)
+    }
+
+    /**
+     * A link that is not on the page must not keep the focus. The Enter key would follow it,
+     * and the Tab key would go back to its page.
+     */
+    function dropHiddenFocus(): void {
+        for (const entry of mounted) {
+            const focused = entry.frame.shadow.activeElement
+            if (!(focused instanceof HTMLElement)) continue
+            const offset = entry.frame.index.offsetOfElement(focused)
+            if (entry === current && offset >= 0 && pageOfOffset(entry, offset) === page) continue
+            focused.blur()
+        }
     }
 
     function anchoredPage(entry: Entry): number {
@@ -566,10 +609,17 @@ export function createPagedView(options: ReaderViewOptions): ReaderView {
         const info = computeInfo(current)
         placeEntries()
         setTrack(page * geometry.width)
+        dropHiddenFocus()
         emit(info)
     }
 
-    function relayout(): void {
+    /**
+     * Apply the appearance and the size. `textMoves` is true when the line breaks can change.
+     * The neighbour chapters are not on screen, so they leave the page then and get their
+     * new layout later, one time. A slider sends many steps, and each step would lay out
+     * three chapters.
+     */
+    function relayout(textMoves: boolean): void {
         if (destroyed) return
         if (!current) {
             if (hasSize()) applyGeometry()
@@ -580,9 +630,15 @@ export function createPagedView(options: ReaderViewOptions): ReaderView {
         finishMotion()
         // The position that the user sees now is the anchor for the new layout.
         settleIfPending()
+        if (textMoves) {
+            dropSlot('prev')
+            dropSlot('next')
+        }
         applyGeometry()
         for (const entry of mounted) entry.frame.setPublisherStyles(appearance.publisherStyles)
         remeasure()
+        // A page turn before that time loads its neighbour itself.
+        if (textMoves) scheduleNeighbours(NEIGHBOUR_DELAY_MS)
     }
 
     function scheduleMeasure(): void {
@@ -1070,8 +1126,26 @@ export function createPagedView(options: ReaderViewOptions): ReaderView {
         callbacks.onLink(linkTarget(link, book))
     }
 
-    /** The Tab key can move the focus to a link on a different page. Show that page. */
-    function onFocusIn(event: FocusEvent): void {
+    /** The first element on the visible page that can get the focus. */
+    function firstFocusableOnPage(): HTMLElement | null {
+        if (!current || !lastInfo || !atRest()) return null
+        if (lastInfo.visible.spineIndex !== current.spineIndex) return null
+        const { start, end } = lastInfo.visible
+        const { body, index } = current.frame
+        // The content pipeline keeps only these elements that can get the focus.
+        for (const item of body.querySelectorAll<HTMLElement>(FOCUSABLE)) {
+            const at = index.offsetOfElement(item)
+            if (at >= end) break
+            if (at >= start) return pageOfOffset(current, at) === page ? item : null
+        }
+        return null
+    }
+
+    /**
+     * A link of the book text got the focus. Each frame has this listener on its shadow root,
+     * because the event of a move in one chapter does not go out of the shadow root.
+     */
+    function onFocusIn(event: Event): void {
         if (press || event.timeStamp - lastPointerDown < 700) return
         const element = event.composedPath()[0]
         if (!(element instanceof Element)) return
@@ -1081,7 +1155,22 @@ export function createPagedView(options: ReaderViewOptions): ReaderView {
         const offset = entry.frame.index.offsetOfElement(element)
         if (offset < 0) return
         if (entry === current && atRest() && pageOfOffset(entry, offset) === page) return
-        void show({ spineIndex: entry.spineIndex, offset }).catch(() => {})
+
+        // The element that had the focus: a link of the same chapter, the host of a different
+        // chapter, an element outside the book text, or null.
+        const from = (event as FocusEvent).relatedTarget
+        // Only the Tab key from one element of the book text to the next shows a different page.
+        if (from instanceof Node && (from.getRootNode() === root || track.contains(from))) {
+            void show({ spineIndex: entry.spineIndex, offset }).catch(() => {})
+            return
+        }
+        // The focus came from a bar or a dialog, or the window is active again. The page stays.
+        firstFocusableOnPage()?.focus({ preventScroll: true })
+        // The page can have no element for the focus, and a hidden element does not take it.
+        // The element that is not on the page must not keep the focus then.
+        if (entry.frame.shadow.activeElement === element && element instanceof HTMLElement) {
+            element.blur()
+        }
     }
 
     clip.addEventListener('pointerdown', onPointerDown, { signal })
@@ -1091,7 +1180,6 @@ export function createPagedView(options: ReaderViewOptions): ReaderView {
     clip.addEventListener('lostpointercapture', onLostCapture, { signal })
     clip.addEventListener('wheel', onWheel, { passive: false, signal })
     clip.addEventListener('keydown', onKeyDown, { signal })
-    clip.addEventListener('focusin', onFocusIn, { signal })
     clip.addEventListener('dragstart', (event) => event.preventDefault(), { signal })
     // A browser without `overflow: clip` can scroll the clip element. Undo that.
     clip.addEventListener(
@@ -1124,7 +1212,7 @@ export function createPagedView(options: ReaderViewOptions): ReaderView {
         if (resizeTimer !== null) clearTimeout(resizeTimer)
         resizeTimer = setTimeout(() => {
             resizeTimer = null
-            relayout()
+            relayout(true)
         }, RESIZE_DELAY_MS)
     }
 
@@ -1267,8 +1355,9 @@ export function createPagedView(options: ReaderViewOptions): ReaderView {
         getPosition: () => lastInfo,
         setAppearance(next) {
             if (destroyed) return
+            const textMoves = changesLayout(appearance, next)
             appearance = next
-            relayout()
+            relayout(textMoves)
         },
         setHighlights(next) {
             if (destroyed) return

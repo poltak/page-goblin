@@ -31,6 +31,11 @@ const KEEP_EACH_SIDE = 2
 /** The loader cache has 6 chapters. The view keeps fewer of them in use. */
 const CACHE_CHAPTERS = 5
 const SETTLE_LIMIT_MS = 1500
+/**
+ * The most chapters that stay mounted while the page scrolls. At this number, the view
+ * removes a chapter above the viewport also during a scroll.
+ */
+const MAX_MOUNTED = 12
 
 interface Entry {
     frame: Frame
@@ -414,8 +419,13 @@ export function createScrollView(options: ReaderViewOptions): ReaderView {
         const check = () => {
             settleTimer = null
             const quiet = performance.now() - lastScrollTime
-            if (quiet >= SETTLE_MS) settleNow()
-            else settleTimer = setTimeout(check, SETTLE_MS - quiet)
+            if (quiet >= SETTLE_MS) {
+                settleNow()
+                // The scroll is at rest. The chapters that waited above the viewport can go.
+                kickFill()
+            } else {
+                settleTimer = setTimeout(check, SETTLE_MS - quiet)
+            }
         }
         settleTimer = setTimeout(check, SETTLE_MS)
     }
@@ -479,8 +489,14 @@ export function createScrollView(options: ReaderViewOptions): ReaderView {
     /** Remove the chapters that are far from the viewport. */
     function prune(scrollTop: number, viewHeight: number): void {
         let top = topPosition(scrollTop)
+        // The removal of a chapter above the viewport needs a write of the scroll position,
+        // and WebKit on iOS stops a momentum scroll at such a write. The chapters above thus
+        // stay until the scroll is at rest. The limit keeps a long scroll from mounting the
+        // complete book.
+        const moving = performance.now() - lastScrollTime < SETTLE_MS
+        const keepAbove = moving && entries.length < MAX_MOUNTED
 
-        while (top > KEEP_EACH_SIDE && entries.length > 1) {
+        while (!keepAbove && top > KEEP_EACH_SIDE && entries.length > 1) {
             const first = entries[0]
             // A very short chapter can be far in the list and still near the viewport.
             if (!first.height || first.height > scrollTop - viewHeight) break

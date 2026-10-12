@@ -48,18 +48,20 @@ type Factory = (options: ReaderViewOptions) => ReaderView
 
 function setup(
     create: Factory,
-    patch: Partial<ReaderViewOptions> & { broken?: number[] } = {},
+    patch: Partial<ReaderViewOptions> & { broken?: number[]; chapters?: readonly string[] } = {},
 ): Setup {
     const container = document.createElement('div')
     document.body.appendChild(container)
+    // A test with its own chapters has all of them in the reading order.
+    const chapters = patch.chapters ?? CHAPTERS
     const book = createFakeBook({
         files: Object.fromEntries(
-            CHAPTERS.map((html, index) => [`text/chapter-${index}.xhtml`, html]),
+            chapters.map((html, index) => [`text/chapter-${index}.xhtml`, html]),
         ),
-        spine: CHAPTERS.map((_, index) => `text/chapter-${index}.xhtml`),
-        nonLinear: ['text/chapter-2.xhtml'],
+        spine: chapters.map((_, index) => `text/chapter-${index}.xhtml`),
+        nonLinear: patch.chapters ? [] : ['text/chapter-2.xhtml'],
     })
-    const content = createFakeContent({ chapters: CHAPTERS, broken: patch.broken })
+    const content = createFakeContent({ chapters, broken: patch.broken })
     const relocates: RelocateInfo[] = []
     const callbacks: ReaderViewCallbacks = {
         onRelocate: vi.fn((info: RelocateInfo) => relocates.push(info)),
@@ -116,6 +118,67 @@ function frames(container: HTMLElement): HTMLElement[] {
 /** The frame that shows a chapter, found by its text. */
 function frameWith(container: HTMLElement, text: string): HTMLElement | undefined {
     return frames(container).find((host) => host.shadowRoot?.textContent?.includes(text))
+}
+
+/** The element with an id in the chapter text of a mounted frame. */
+function inBook(container: HTMLElement, id: string): HTMLElement {
+    for (const host of frames(container)) {
+        const found = host.shadowRoot?.querySelector<HTMLElement>(`#${id}`)
+        if (found) return found
+    }
+    throw new Error(`No mounted chapter has the element ${id}.`)
+}
+
+/** The element of the book text that has the focus. */
+function focusedInBook(container: HTMLElement): Element | null {
+    for (const host of frames(container)) {
+        const focused = host.shadowRoot?.activeElement
+        if (focused) return focused
+    }
+    return null
+}
+
+const PAGE_WIDTH = 800
+
+/**
+ * A page layout for jsdom. The text below an element with `data-page` is on that page of
+ * its chapter. A chapter has one more page than its highest `data-page` value. Returns the
+ * function that removes the layout.
+ */
+function fakePageLayout(): () => void {
+    const box = (left: number) =>
+        ({
+            x: left,
+            y: 10,
+            left,
+            top: 10,
+            right: left + 10,
+            bottom: 20,
+            width: 10,
+            height: 10,
+        }) as DOMRect
+    const pageOf = (node: Node): number => {
+        const element = node.nodeType === 1 ? (node as Element) : node.parentElement
+        return Number(element?.closest('[data-page]')?.getAttribute('data-page') ?? 0)
+    }
+
+    // The ranges of jsdom do not have this function.
+    const ranges = Range.prototype as { getClientRects?: unknown }
+    ranges.getClientRects = function (this: Range) {
+        return [box(pageOf(this.startContainer) * PAGE_WIDTH + 60)]
+    }
+    vi.spyOn(Element.prototype, 'getClientRects').mockImplementation(function (this: Element) {
+        const boxes: DOMRect[] = []
+        if (this.localName === 'rd-body') {
+            const last = Math.max(0, ...[...this.querySelectorAll('[data-page]')].map(pageOf))
+            // One box for each column, as a browser gives it.
+            for (let page = 0; page <= last; page++) boxes.push(box(page * PAGE_WIDTH + 60))
+        }
+        return boxes as unknown as DOMRectList
+    })
+    return () => {
+        delete ranges.getClientRects
+    }
 }
 
 const HIGHLIGHT: HighlightMark = {
@@ -634,6 +697,385 @@ describe('scroll view', () => {
         await view.ready
         expect(await view.next()).toBe(false)
         expect(await view.prev()).toBe(false)
+        view.destroy()
+    })
+})
+
+describe('paged view, focus on a link of the book text', () => {
+    const link = (id: string) => `<a id="${id}" role="link" tabindex="0">${id}</a>`
+    const LINKED = [
+        `<p data-page="0">Before ${link('a0')}.</p><p data-page="1">Then ${link('a1')}.</p>`,
+        `<p data-page="0">A first page with no link.</p>` +
+            `<p data-page="1">Two links, ${link('b1')} and ${link('b2')}.</p>` +
+            `<p data-page="2">The last page with ${link('b3')}.</p>`,
+        `<p data-page="0">After ${link('c0')}.</p>`,
+    ]
+    let removeLayout: () => void = () => {}
+    let outside: HTMLButtonElement
+
+    beforeEach(() => {
+        removeLayout = fakePageLayout()
+        outside = document.createElement('button')
+        document.body.appendChild(outside)
+    })
+
+    afterEach(() => removeLayout())
+
+    /** The view at a page of the middle chapter, with both neighbour chapters mounted. */
+    async function atPage(page: number): Promise<Setup> {
+        const made = setup(createPagedView, {
+            chapters: LINKED,
+            initial: { spineIndex: 1, offset: 0 },
+        })
+        await made.view.ready
+        expect(made.view.getPosition()?.pageCount).toBe(3)
+        for (let turned = 1; turned < page; turned++) await made.view.next()
+        expect(made.view.getPosition()?.page).toBe(page)
+        await vi.waitFor(() => expect(frames(made.container)).toHaveLength(3))
+        return made
+    }
+
+    it('shows the page of the next link of the same chapter', async () => {
+        const { view, container } = await atPage(2)
+        inBook(container, 'b1').focus()
+        inBook(container, 'b2').focus()
+        expect(view.getPosition()?.page).toBe(2)
+
+        // This event does not go out of the shadow root of the chapter.
+        inBook(container, 'b3').focus()
+        expect(view.getPosition()?.page).toBe(3)
+        expect(focusedInBook(container)).toBe(inBook(container, 'b3'))
+
+        inBook(container, 'b2').focus()
+        expect(view.getPosition()?.page).toBe(2)
+        expect(focusedInBook(container)).toBe(inBook(container, 'b2'))
+        view.destroy()
+    })
+
+    it('shows the chapter of a link that follows a link of the chapter before', async () => {
+        const { view, container } = await atPage(3)
+        inBook(container, 'b3').focus()
+        inBook(container, 'c0').focus()
+        expect(view.getPosition()?.locator.spineIndex).toBe(2)
+        expect(focusedInBook(container)).toBe(inBook(container, 'c0'))
+        view.destroy()
+    })
+
+    it('keeps the page when the focus comes from outside the book text', async () => {
+        const { view, container, relocates } = await atPage(2)
+        const events = relocates.length
+        outside.focus()
+        // The Tab key from a bar goes to the first link of the chapter before.
+        inBook(container, 'a0').focus()
+        expect(view.getPosition()?.locator.spineIndex).toBe(1)
+        expect(view.getPosition()?.page).toBe(2)
+        expect(focusedInBook(container)).toBe(inBook(container, 'b1'))
+
+        // A dialog that closes gives the focus back to a link that is on a different page.
+        outside.focus()
+        inBook(container, 'b3').focus()
+        expect(view.getPosition()?.page).toBe(2)
+        expect(focusedInBook(container)).toBe(inBook(container, 'b1'))
+        expect(relocates).toHaveLength(events)
+        view.destroy()
+    })
+
+    it('keeps the page when the focus comes from no element', async () => {
+        const { view, container } = await atPage(2)
+        // The window is active again, and the browser gives the focus back to a link.
+        inBook(container, 'c0').focus()
+        expect(view.getPosition()?.locator.spineIndex).toBe(1)
+        expect(view.getPosition()?.page).toBe(2)
+        expect(focusedInBook(container)).toBe(inBook(container, 'b1'))
+        view.destroy()
+    })
+
+    it('removes the focus when the page has no element for it', async () => {
+        const { view, container } = await atPage(1)
+        outside.focus()
+        inBook(container, 'b1').focus()
+        expect(view.getPosition()?.page).toBe(1)
+        expect(focusedInBook(container)).toBeNull()
+        expect(document.activeElement).toBe(document.body)
+        view.destroy()
+    })
+
+    it('removes the focus from a link that leaves the page', async () => {
+        const { view, container } = await atPage(2)
+        inBook(container, 'b1').focus()
+        expect(await view.next()).toBe(true)
+        expect(focusedInBook(container)).toBeNull()
+
+        // The next link in the Tab order is on the page that the user left.
+        inBook(container, 'b2').focus()
+        expect(view.getPosition()?.page).toBe(3)
+        expect(focusedInBook(container)).toBe(inBook(container, 'b3'))
+        view.destroy()
+    })
+
+    it('removes the focus from a link that a new layout moves to a different page', async () => {
+        const chapters = [
+            '<p data-page="0">One.</p>',
+            '<p data-page="0">The first lines of the page.</p>' +
+                `<p id="moves" data-page="0">Then ${link('m0')}.</p>`,
+        ]
+        const { view, container } = setup(createPagedView, {
+            chapters,
+            initial: { spineIndex: 1, offset: 0 },
+        })
+        await view.ready
+        inBook(container, 'm0').focus()
+        expect(focusedInBook(container)).toBe(inBook(container, 'm0'))
+
+        // The larger text needs more room, and the paragraph of the link goes to the next page.
+        inBook(container, 'moves').setAttribute('data-page', '1')
+        view.setAppearance({ ...APPEARANCE, fontSize: 30 })
+        expect(view.getPosition()?.page).toBe(1)
+        expect(view.getPosition()?.pageCount).toBe(2)
+        expect(focusedInBook(container)).toBeNull()
+        view.destroy()
+    })
+
+    it('removes the focus when the element of the page cannot take it', async () => {
+        // A `summary` with no `details` parent is in the list of the view, and it cannot have
+        // the focus. A link in a hidden part of a book is the same in a browser.
+        const chapters = [
+            '<p data-page="0">One.</p>',
+            '<summary data-page="0">A part that does not open.</summary>' +
+                `<p data-page="1">The next page with ${link('b1')} and ${link('b2')}.</p>`,
+        ]
+        const { view, container } = setup(createPagedView, {
+            chapters,
+            initial: { spineIndex: 1, offset: 0 },
+        })
+        await view.ready
+        outside.focus()
+        inBook(container, 'b1').focus()
+        expect(view.getPosition()?.page).toBe(1)
+        // With the focus on the link, the next press of the Tab key would move the book.
+        expect(focusedInBook(container)).toBeNull()
+        view.destroy()
+    })
+
+    it('does not move the page for a link that a pointer press gave the focus', async () => {
+        const { view, container } = await atPage(2)
+        const clip = container.firstElementChild!
+        const down = new MouseEvent('pointerdown', { bubbles: true, button: 0 })
+        Object.defineProperties(down, { pointerId: { value: 1 }, isPrimary: { value: true } })
+        clip.dispatchEvent(down)
+        inBook(container, 'b1').focus()
+        inBook(container, 'b3').focus()
+        expect(view.getPosition()?.page).toBe(2)
+        view.destroy()
+    })
+})
+
+describe('paged view, a change of the text layout', () => {
+    /** The view at the second chapter, with both neighbour chapters mounted. */
+    async function withNeighbours(): Promise<Setup> {
+        const made = setup(createPagedView, { initial: { spineIndex: 1, offset: 0 } })
+        await made.view.ready
+        await vi.waitFor(() => expect(frames(made.container)).toHaveLength(3))
+        return made
+    }
+
+    /** The chapters that the view reads the layout of. In a browser, a read is a layout. */
+    function watchMeasures(): Set<string> {
+        const measured = new Set<string>()
+        vi.spyOn(Element.prototype, 'getClientRects').mockImplementation(function (this: Element) {
+            if (this.localName === 'rd-body') measured.add(this.textContent ?? '')
+            return [] as unknown as DOMRectList
+        })
+        return measured
+    }
+
+    it('lays out only the chapter on screen for a new font size', async () => {
+        const { view, container } = await withNeighbours()
+        const measured = watchMeasures()
+        view.setAppearance({ ...APPEARANCE, fontSize: 19 })
+        expect([...measured]).toEqual(['TwoThe second chapter with a target.'])
+        expect(frames(container)).toHaveLength(1)
+        expect(frameWith(container, 'The second chapter')).toBeDefined()
+
+        await vi.waitFor(() => expect(frames(container)).toHaveLength(3))
+        expect(measured.size).toBe(3)
+        view.destroy()
+    })
+
+    it('loads the neighbour chapters one time, after the last step of a slider', async () => {
+        const { view, container, content } = await withNeighbours()
+        const loads = content.loads.get(3)
+        vi.useFakeTimers()
+        for (const fontSize of [19, 20, 21, 22]) {
+            view.setAppearance({ ...APPEARANCE, fontSize })
+            await vi.advanceTimersByTimeAsync(120)
+            expect(frames(container)).toHaveLength(1)
+        }
+        expect(content.loads.get(3)).toBe(loads)
+
+        await vi.advanceTimersByTimeAsync(1000)
+        expect(frames(container)).toHaveLength(3)
+        view.destroy()
+    })
+
+    it('keeps the wait when an older load of a neighbour chapter ends', async () => {
+        const { content, release } = gatedContent([3])
+        const asked = vi.spyOn(content, 'load')
+        const { view, container } = setup(createPagedView, {
+            content,
+            initial: { spineIndex: 1, offset: 0 },
+        })
+        await view.ready
+        // The view waits for the next chapter now. The chapter before comes after it.
+        await vi.waitFor(() => expect(asked).toHaveBeenCalledWith(3))
+        vi.useFakeTimers()
+        view.setAppearance({ ...APPEARANCE, fontSize: 19 })
+        release()
+        // The older load ends here. It must not start the load of the chapter before.
+        await vi.advanceTimersByTimeAsync(120)
+        expect(frames(container)).toHaveLength(1)
+
+        await vi.advanceTimersByTimeAsync(1000)
+        expect(frames(container)).toHaveLength(3)
+        view.destroy()
+    })
+
+    it('turns to the next chapter right after a new font size', async () => {
+        const { view, container } = await withNeighbours()
+        view.setAppearance({ ...APPEARANCE, fontSize: 19 })
+        expect(frames(container)).toHaveLength(1)
+        expect(await view.next()).toBe(true)
+        expect(view.getPosition()?.locator.spineIndex).toBe(3)
+        expect(await view.prev()).toBe(true)
+        expect(await view.prev()).toBe(true)
+        expect(view.getPosition()?.locator.spineIndex).toBe(0)
+        view.destroy()
+    })
+
+    it('keeps the neighbour chapters for a new theme or page turn', async () => {
+        const { view, container } = await withNeighbours()
+        const mounted = frames(container)
+        view.setAppearance({ ...APPEARANCE, theme: 'dark', pageTurn: 'fade' })
+        expect(frames(container)).toEqual(mounted)
+        view.destroy()
+    })
+
+    it('keeps the anchor of the page for a new margin', async () => {
+        const removeLayout = fakePageLayout()
+        try {
+            const chapters = [
+                '<p data-page="0">One.</p>',
+                '<p data-page="0">First.</p><p data-page="1">Second.</p><p data-page="2">Third.</p>',
+                '<p data-page="0">Three.</p>',
+            ]
+            const { view, container } = setup(createPagedView, {
+                chapters,
+                initial: { spineIndex: 1, offset: 'First.'.length },
+            })
+            await view.ready
+            await vi.waitFor(() => expect(frames(container)).toHaveLength(3))
+            const before = view.getPosition()
+            expect(before?.page).toBe(2)
+
+            view.setAppearance({ ...APPEARANCE, margin: 'wide' })
+            expect(frames(container)).toHaveLength(1)
+            expect(view.getPosition()?.page).toBe(2)
+            expect(view.getPosition()?.locator).toEqual(before?.locator)
+            view.destroy()
+        } finally {
+            removeLayout()
+        }
+    })
+})
+
+describe('scroll view, chapters above the viewport', () => {
+    const PARTS = Array.from({ length: 16 }, (_, index) => `<p>Text of part ${index}.</p>`)
+    const CHAPTER_HEIGHT = 1000
+    /** The time that the view reads. A test moves it by hand. */
+    let clock = 0
+
+    beforeEach(() => {
+        clock = 50_000
+        vi.spyOn(performance, 'now').mockImplementation(() => clock)
+        // jsdom has no layout. Each chapter is 1000 pixels high in a viewport of 600 pixels.
+        vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(600)
+        vi.spyOn(Element.prototype, 'scrollHeight', 'get').mockImplementation(function (
+            this: Element,
+        ) {
+            return this.childElementCount * CHAPTER_HEIGHT
+        })
+        vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+            this: Element,
+        ) {
+            const height = this.hasAttribute('data-rd-frame') ? CHAPTER_HEIGHT : 600
+            return {
+                x: 0,
+                y: 0,
+                left: 0,
+                top: 0,
+                right: 800,
+                bottom: height,
+                width: 800,
+                height,
+            } as DOMRect
+        })
+    })
+
+    function part(container: HTMLElement, index: number): HTMLElement | undefined {
+        return frameWith(container, `Text of part ${index}.`)
+    }
+
+    /** One scroll event of the user, at a position near the end of the mounted chapters. */
+    function scrollNearEnd(container: HTMLElement): number {
+        const scroller = container.firstElementChild!
+        scroller.scrollTop = frames(container).length * CHAPTER_HEIGHT - 700
+        scroller.dispatchEvent(new Event('scroll'))
+        return scroller.scrollTop
+    }
+
+    async function start(): Promise<Setup> {
+        const made = setup(createScrollView, { chapters: PARTS })
+        await made.view.ready
+        await vi.waitFor(() => expect(part(made.container, 1)).toBeDefined())
+        return made
+    }
+
+    it('keeps them while the page scrolls and removes them when the scroll is at rest', async () => {
+        const { view, container } = await start()
+        const scroller = container.firstElementChild!
+        let scrollTop = 0
+        // The fifth chapter is at the viewport top. Without the wait, the first one goes.
+        for (let last = 2; last <= 5; last++) {
+            scrollTop = scrollNearEnd(container)
+            await vi.waitFor(() => expect(part(container, last)).toBeDefined())
+        }
+        await new Promise((resolve) => setTimeout(resolve, 60))
+        expect(part(container, 0)).toBeDefined()
+        expect(frames(container)).toHaveLength(6)
+        // No write of the scroll position: it would stop a momentum scroll.
+        expect(scroller.scrollTop).toBe(scrollTop)
+
+        clock += 1000
+        await vi.waitFor(() => expect(part(container, 0)).toBeUndefined())
+        expect(part(container, 1)).toBeUndefined()
+        expect(part(container, 2)).toBeDefined()
+        expect(scroller.scrollTop).toBe(scrollTop - 2 * CHAPTER_HEIGHT)
+        view.destroy()
+    })
+
+    it('removes them during a scroll when 12 chapters are mounted', async () => {
+        const { view, container } = await start()
+        let most = 0
+        for (let last = 2; last <= 14; last++) {
+            scrollNearEnd(container)
+            await vi.waitFor(() => expect(part(container, last)).toBeDefined())
+            await new Promise((resolve) => setTimeout(resolve, 20))
+            most = Math.max(most, frames(container).length)
+            if (last === 10) expect(part(container, 0)).toBeDefined()
+        }
+        // The view removes chapters in the same task in which chapter 12 gets its place.
+        expect(most).toBe(11)
+        expect(part(container, 0)).toBeUndefined()
         view.destroy()
     })
 })

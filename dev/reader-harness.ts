@@ -4,7 +4,8 @@
  * URL parameters: book (a file name in /local-books/), mode (paged or scroll), theme, spine,
  * offset, font (size in pixels), margin, columns, turn (slide, fade or none), publisher (0
  * turns the book styles off), bar (0 hides the bar), motion (0 makes the page act as if
- * the user asked for reduced motion), visible (1 makes the page act as if it is visible).
+ * the user asked for reduced motion), visible (1 makes the page act as if it is visible),
+ * reload (0 keeps the page when a source file changes, so that a long test is not cut off).
  */
 
 import { createContentLoader, createTextIndex } from '$lib/content'
@@ -118,6 +119,13 @@ async function main(): Promise<void> {
             if (!query.includes('prefers-reduced-motion')) return list
             return Object.create(list, { matches: { value: true } }) as MediaQueryList
         }
+    }
+    if (params.get('reload') === '0') {
+        // The dev server reloads the page for each change of a source file. An error in
+        // this event stops that reload. Load the page again by hand to get new code.
+        import.meta.hot?.on('vite:beforeFullReload', () => {
+            throw new Error('A source file changed. The page stays, because reload is 0.')
+        })
     }
     if (params.get('visible') === '1') {
         // The view does not animate in a page that is not visible. A test of the animations
