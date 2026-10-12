@@ -80,6 +80,8 @@ export function createNotePopover({ session, host }: PartOptions): Part {
     const surface = qs('.note-card', card)
     const body = qs('.note-body', card)
     const shadow = body.attachShadow({ mode: 'open' })
+    // As for a chapter frame: a positioned box of the book stays inside the note.
+    body.style.contain = 'layout paint'
     host.append(card)
 
     /** The link that the open note belongs to. */

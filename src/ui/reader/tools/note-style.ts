@@ -59,6 +59,10 @@ export function noteBaseCss(): string {
     }
 }
 @layer rd-override {
+    /* A positioned box of the book must not cover the controls of the app. */
+    :host {
+        contain: layout paint !important;
+    }
     rd-html,
     rd-body {
         display: block !important;

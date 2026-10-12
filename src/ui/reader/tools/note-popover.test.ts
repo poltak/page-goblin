@@ -253,6 +253,17 @@ describe('the note popover', () => {
         expect(noteHost().hasAttribute('data-dark')).toBe(false)
     })
 
+    it('keeps a positioned box of the book inside the note', async () => {
+        // The containment makes the note the containing block and clips the box to it.
+        expect(noteHost().style.contain).toBe('layout paint')
+
+        await openNote(
+            note('<p><a href="https://example.org" style="position: absolute">A link</a></p>'),
+        )
+
+        expect(noteHost().style.contain).toBe('layout paint')
+    })
+
     it('takes the focus, and gives it back when the close button closes it', async () => {
         outside.tabIndex = 0
         outside.focus()
@@ -775,6 +786,13 @@ describe('the base sheet of the note', () => {
         expect(css).toContain('color: var(--rd-fg)')
         expect(css).toContain('color: var(--rd-link)')
         expect(css).toContain('font-size: var(--note-size, 1rem) !important')
+    })
+
+    it('contains the layout and the paint of the note in the override layer', () => {
+        const css = noteBaseCss()
+        const override = css.slice(css.indexOf('@layer rd-override {'))
+
+        expect(override).toMatch(/:host \{\s*contain: layout paint !important;\s*\}/)
     })
 
     it('is one sheet for all popovers', () => {
