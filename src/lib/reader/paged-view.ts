@@ -1039,6 +1039,14 @@ export function createPagedView(options: ReaderViewOptions): ReaderView {
         if (press && event.pointerId === press.id) cancelPress()
     }
 
+    function onLostCapture(event: PointerEvent): void {
+        // A finger has an implicit capture on the element below it. When the clip takes the
+        // capture for a drag, that element loses it, and its event bubbles to the clip. Only a
+        // loss of the capture of the clip itself ends the drag.
+        if (event.target !== clip) return
+        if (press?.captured && event.pointerId === press.id) cancelPress()
+    }
+
     function onWheel(event: WheelEvent): void {
         // The Control key with the wheel is a zoom.
         if (event.ctrlKey) return
@@ -1078,7 +1086,7 @@ export function createPagedView(options: ReaderViewOptions): ReaderView {
     clip.addEventListener('pointermove', onPointerMove, { signal })
     clip.addEventListener('pointerup', onPointerUp, { signal })
     clip.addEventListener('pointercancel', onPointerCancel, { signal })
-    clip.addEventListener('lostpointercapture', onPointerCancel, { signal })
+    clip.addEventListener('lostpointercapture', onLostCapture, { signal })
     clip.addEventListener('wheel', onWheel, { passive: false, signal })
     clip.addEventListener('keydown', onKeyDown, { signal })
     clip.addEventListener('focusin', onFocusIn, { signal })
