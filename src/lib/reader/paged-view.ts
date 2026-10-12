@@ -186,6 +186,7 @@ export function createPagedView(options: ReaderViewOptions): ReaderView {
         height: 1,
         margin: appearance.margin,
         columns: appearance.columns,
+        fontSize: appearance.fontSize,
     })
     let cssText = overrideCss({ appearance, layout: { mode: 'paged', geometry } })
     const baseSheet = getBaseSheet()
@@ -238,6 +239,7 @@ export function createPagedView(options: ReaderViewOptions): ReaderView {
             height: size.height,
             margin: appearance.margin,
             columns: appearance.columns,
+            fontSize: appearance.fontSize,
         })
         const css = overrideCss({ appearance, layout: { mode: 'paged', geometry } })
         if (css === cssText) return false
@@ -1116,6 +1118,7 @@ export function createPagedView(options: ReaderViewOptions): ReaderView {
             ...size,
             margin: appearance.margin,
             columns: appearance.columns,
+            fontSize: appearance.fontSize,
         })
         if (sameGeometry(next, geometry)) return
         if (resizeTimer !== null) clearTimeout(resizeTimer)

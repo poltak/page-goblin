@@ -186,3 +186,47 @@ describe('scrollGeometry', () => {
         expect(scrollGeometry('wide')).toEqual({ maxWidthEm: 30, sidePadding: 28 })
     })
 })
+
+describe('line length limit', () => {
+    it('keeps one column at a readable width on a wide screen', () => {
+        const geometry = pagedGeometry({
+            width: 1280,
+            height: 800,
+            margin: 'normal',
+            columns: 1,
+            fontSize: 19,
+        })
+        // 38 em of 19 px.
+        expect(geometry.columnWidth).toBe(722)
+        expect(geometry.marginX).toBe(279)
+        expect(geometry.columnGap).toBe(2 * geometry.marginX)
+        expect(geometry.contentWidth).toBe(geometry.columnWidth)
+    })
+
+    it('follows the margin setting and the font size', () => {
+        const base = { width: 1600, height: 900, columns: 1 as const }
+        const narrow = pagedGeometry({ ...base, margin: 'narrow', fontSize: 20 })
+        const wide = pagedGeometry({ ...base, margin: 'wide', fontSize: 20 })
+        const large = pagedGeometry({ ...base, margin: 'wide', fontSize: 30 })
+        expect(narrow.columnWidth).toBe(920)
+        expect(wide.columnWidth).toBe(600)
+        expect(large.columnWidth).toBe(900)
+    })
+
+    it('does not change a phone page or a page that is narrow enough', () => {
+        const options = { width: 390, height: 844, margin: 'normal' as const, columns: 1 as const }
+        expect(pagedGeometry({ ...options, fontSize: 19 })).toEqual(pagedGeometry(options))
+    })
+
+    it('keeps the strip of two columns exactly one screen wide', () => {
+        const geometry = pagedGeometry({
+            width: 2400,
+            height: 1200,
+            margin: 'normal',
+            columns: 2,
+            fontSize: 18,
+        })
+        expect(geometry.columnWidth).toBe(684)
+        expect(2 * (geometry.columnWidth + geometry.columnGap)).toBe(geometry.width)
+    })
+})

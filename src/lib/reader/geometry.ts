@@ -28,6 +28,11 @@ export interface PagedGeometryOptions {
     height: number
     margin: MarginSize
     columns: ColumnChoice
+    /**
+     * Body font size in pixels. With it, a column is not wider than a comfortable line length
+     * (the same limits as the scroll view), and the side margins take the rest of the width.
+     */
+    fontSize?: number
 }
 
 export interface ScrollGeometry {
@@ -73,6 +78,12 @@ export function pagedGeometry(options: PagedGeometryOptions): PagedGeometry {
     // A very small container keeps some text width.
     const widest = Math.floor((width / columns - MIN_COLUMN_WIDTH) / 2)
     marginX = Math.max(0, Math.min(marginX, widest))
+
+    if (options.fontSize) {
+        // One column on a wide screen would give lines that are too long to read well.
+        const longest = Math.round(options.fontSize * scrollGeometry(options.margin).maxWidthEm)
+        marginX = Math.max(marginX, Math.ceil((width - columns * longest) / (2 * columns)))
+    }
 
     let marginY = Math.round(clamp(12, height * 0.035, 40))
     marginY = Math.max(0, Math.min(marginY, Math.floor((height - 1) / 2)))

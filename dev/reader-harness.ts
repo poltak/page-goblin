@@ -350,6 +350,7 @@ async function main(): Promise<void> {
             height: clip.height,
             margin: appearance.margin,
             columns: appearance.columns,
+            fontSize: appearance.fontSize,
         })
         const step = geometry.columnWidth + geometry.columnGap
         for (const image of chapter.body.querySelectorAll('img, svg, video')) {
@@ -574,6 +575,7 @@ async function main(): Promise<void> {
                 height: box.height,
                 margin: appearance.margin,
                 columns: appearance.columns,
+                fontSize: appearance.fontSize,
             })
             for (const host of hosts()) {
                 const root = host.shadowRoot?.querySelector('rd-html')
