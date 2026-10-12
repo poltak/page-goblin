@@ -1,6 +1,6 @@
 {
-    "name": "Web eReader",
-    "short_name": "eReader",
+    "name": "Page Goblin",
+    "short_name": "Page Goblin",
     "description": "A local-first EPUB reader and speed reader. Your books stay on your device.",
     "start_url": "./",
     "scope": "./",

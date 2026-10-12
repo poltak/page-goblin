@@ -149,7 +149,7 @@ export function pwaPlugin(): Plugin {
     let spritePath = ''
 
     return {
-        name: 'web-ereader:pwa',
+        name: 'page-goblin:pwa',
 
         configResolved(config) {
             isBuild = config.command === 'build'

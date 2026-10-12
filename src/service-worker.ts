@@ -26,7 +26,7 @@ export interface RouteInput {
 
 declare const self: ServiceWorkerGlobalScope & { __SW_MANIFEST: PrecacheManifest }
 
-const CACHE_PREFIX = 'web-ereader-'
+const CACHE_PREFIX = 'page-goblin-'
 const FONT_CACHE = `${CACHE_PREFIX}fonts`
 const SHELL = './'
 // The build plugin has the same rule in build/pwa-plugin.ts.

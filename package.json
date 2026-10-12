@@ -1,11 +1,10 @@
 {
-    "name": "web-ereader",
+    "name": "page-goblin",
     "version": "0.1.0",
     "private": true,
     "type": "module",
     "packageManager": "pnpm@12.6.0",
     "description": "A local-first EPUB reader and speed reader that runs fully in the browser.",
-    "license": "Apache-2.0",
     "author": {
         "name": "Jonathan Poltak Samosir",
         "email": "jonathan.samosir@gmail.com",

@@ -24,10 +24,10 @@ import type {
     RestoreResult,
 } from './types'
 
-export const BACKUP_FORMAT = 'web-ereader-backup'
+export const BACKUP_FORMAT = 'page-goblin-backup'
 export const BACKUP_VERSION = 1
 
-const NOT_A_BACKUP = 'This file is not a Web eReader backup.'
+const NOT_A_BACKUP = 'This file is not a Page Goblin backup.'
 const SHA_256_HEX = /^[0-9a-f]{64}$/
 const ISO_DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/
 /**

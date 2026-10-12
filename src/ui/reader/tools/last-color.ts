@@ -1,7 +1,7 @@
 import { HIGHLIGHT_COLORS } from '$lib/types'
 import type { HighlightColor } from '$lib/types'
 
-export const HIGHLIGHT_COLOR_KEY = 'web-ereader:highlight-color'
+export const HIGHLIGHT_COLOR_KEY = 'page-goblin:highlight-color'
 
 export const DEFAULT_HIGHLIGHT_COLOR: HighlightColor = 'yellow'
 

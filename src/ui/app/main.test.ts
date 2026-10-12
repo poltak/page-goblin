@@ -126,7 +126,7 @@ describe('the app', () => {
         // The entry of the book is still there for Forward.
         expect(history.length).toBe(entries)
         expect(el('#reader-view').hidden).toBe(true)
-        expect(document.title).toBe('Web eReader')
+        expect(document.title).toBe('Page Goblin')
         await vi.waitFor(() => expect(destroyed).toEqual(['seed']))
         expect(el('#reader-view').childElementCount).toBe(0)
     })

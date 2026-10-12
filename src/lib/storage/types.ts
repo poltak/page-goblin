@@ -1,7 +1,7 @@
 /**
  * Records of the IndexedDB database and the interface of the library storage.
  *
- * Database name: `web-ereader`. Object stores:
+ * Database name: `page-goblin`. Object stores:
  * - `books`      key `id`. Small records for the library view. No file data, no cover data.
  * - `files`      key = book id. The original EPUB file as a Blob.
  * - `covers`     key = book id. A small cover image as a Blob.

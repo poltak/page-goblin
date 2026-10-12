@@ -7,7 +7,7 @@ import type { LibraryStorage } from '$lib/storage/types'
 import { cloneTemplate } from '../dom'
 import type { MountedReader, ReaderMountOptions } from '../reader/types'
 
-export const APP_TITLE = 'Web eReader'
+export const APP_TITLE = 'Page Goblin'
 /** A load that is faster than this shows no loading state. */
 export const LOADING_DELAY_MS = 150
 

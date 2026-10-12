@@ -11,7 +11,7 @@ import { qs } from '../dom'
 import { backupFileName, describeRestore, formatMegabytes } from './app-format'
 import { bookCountText } from './format'
 
-const NOT_A_BACKUP = 'This file is not a Web eReader backup.'
+const NOT_A_BACKUP = 'This file is not a Page Goblin backup.'
 
 export interface AppActionsOptions {
     storage: LibraryStorage

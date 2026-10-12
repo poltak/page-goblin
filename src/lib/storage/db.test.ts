@@ -44,7 +44,7 @@ describe('createDatabase', () => {
         database.close()
 
         const raw = await openRaw(factory)
-        expect(raw.name).toBe('web-ereader')
+        expect(raw.name).toBe('page-goblin')
         expect(raw.version).toBe(DATABASE_VERSION)
         expect([...raw.objectStoreNames]).toEqual([
             'bookmarks',

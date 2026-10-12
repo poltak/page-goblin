@@ -5,7 +5,7 @@
     var colors = { light: '#fbfaf8', sepia: '#f4ecd8', dark: '#1d1d1b', black: '#000000' }
     var saved = null
     try {
-        saved = JSON.parse(localStorage.getItem('web-ereader:settings'))
+        saved = JSON.parse(localStorage.getItem('page-goblin:settings'))
     } catch (error) {
         // Blocked storage and bad data give the defaults.
     }

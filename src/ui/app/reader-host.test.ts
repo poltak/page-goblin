@@ -117,7 +117,7 @@ describe('createReaderHost', () => {
         expect(document.title).toBe('Anna Karenina')
 
         host.show(null)
-        expect(document.title).toBe('Web eReader')
+        expect(document.title).toBe('Page Goblin')
     })
 
     it('destroys the reader, shows the library and reports the closed book', async () => {

@@ -13,10 +13,10 @@ function twoDigits(value: number): string {
     return String(value).padStart(2, '0')
 }
 
-/** 'web-ereader-backup-YYYY-MM-DD.json' with the local date. */
+/** 'page-goblin-backup-YYYY-MM-DD.json' with the local date. */
 export function backupFileName(now: Date): string {
     const date = `${now.getFullYear()}-${twoDigits(now.getMonth() + 1)}-${twoDigits(now.getDate())}`
-    return `web-ereader-backup-${date}.json`
+    return `page-goblin-backup-${date}.json`
 }
 
 function joinList(parts: string[]): string {

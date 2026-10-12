@@ -18,7 +18,7 @@ describe('the last highlight colour', () => {
     it('is saved under the key of the app', () => {
         saveLastColor('pink')
 
-        expect(HIGHLIGHT_COLOR_KEY).toBe('web-ereader:highlight-color')
+        expect(HIGHLIGHT_COLOR_KEY).toBe('page-goblin:highlight-color')
         expect(localStorage.getItem(HIGHLIGHT_COLOR_KEY)).toBe('pink')
         expect(readLastColor()).toBe('pink')
     })

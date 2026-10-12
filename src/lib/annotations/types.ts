@@ -28,7 +28,7 @@ export interface BackupBook {
 
 /** The JSON file that holds the positions and annotations of all books. It has no book files. */
 export interface BackupFile {
-    format: 'web-ereader-backup'
+    format: 'page-goblin-backup'
     version: 1
     /** ISO 8601 date and time. */
     exportedAt: string

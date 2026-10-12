@@ -14,12 +14,12 @@ function pngSize(file: string): { width: number; height: number } {
 
 describe('web app manifest', () => {
     // A project site on GitHub Pages is below a repository path.
-    const manifestUrl = 'https://example.github.io/web-ereader/manifest.webmanifest'
+    const manifestUrl = 'https://example.github.io/page-goblin/manifest.webmanifest'
 
     it('names a standalone app', () => {
         expect(manifest).toMatchObject({
-            name: 'Web eReader',
-            short_name: 'eReader',
+            name: 'Page Goblin',
+            short_name: 'Page Goblin',
             display: 'standalone',
             background_color: '#fbfaf8',
             theme_color: '#fbfaf8',
@@ -32,8 +32,8 @@ describe('web app manifest', () => {
     })
 
     it('starts at the app root for each repository path', () => {
-        expect(new URL(manifest.start_url, manifestUrl).pathname).toBe('/web-ereader/')
-        expect(new URL(manifest.scope, manifestUrl).pathname).toBe('/web-ereader/')
+        expect(new URL(manifest.start_url, manifestUrl).pathname).toBe('/page-goblin/')
+        expect(new URL(manifest.scope, manifestUrl).pathname).toBe('/page-goblin/')
         // A browser resolves `id` from the domain root, not from the manifest. Without the
         // field the identity is the start URL, which is different for each repository path.
         expect(manifest).not.toHaveProperty('id')

@@ -68,7 +68,7 @@ afterEach(() => {
 
 describe('the library header', () => {
     it('has the name as text and labels for the icon buttons', () => {
-        expect(el('.library-name').textContent).toBe('Web eReader')
+        expect(el('.library-name').textContent).toBe('Page Goblin')
         expect(el('.library-header').querySelector('img')).toBeNull()
         expect(el('#theme-button').getAttribute('aria-label')).toBe('Theme')
         expect(el('#app-menu-button').getAttribute('aria-label')).toBe('More')

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 type WorkerModule = typeof import('./service-worker')
 type Listener = (event: never) => void
 
-const SCOPE = 'https://example.com/web-ereader/'
+const SCOPE = 'https://example.com/page-goblin/'
 const MANIFEST = {
     version: 'abc123',
     files: [
@@ -15,7 +15,7 @@ const MANIFEST = {
         'theme-init.js',
     ],
 }
-const CURRENT_CACHE = 'web-ereader-abc123'
+const CURRENT_CACHE = 'page-goblin-abc123'
 const FONT_URL = `${SCOPE}assets/literata-latin-wght-normal-C8sHkM2a.woff2`
 
 function keyOf(request: string | { url: string }): string {
@@ -117,7 +117,7 @@ describe('service worker', () => {
         })
 
         it('gives null outside the scope', () => {
-            expect(worker.pathInScope('https://other.example/web-ereader/', SCOPE)).toBeNull()
+            expect(worker.pathInScope('https://other.example/page-goblin/', SCOPE)).toBeNull()
             expect(worker.pathInScope('https://example.com/other-app/a.js', SCOPE)).toBeNull()
             expect(worker.pathInScope('https://example.com/', SCOPE)).toBeNull()
         })
@@ -202,14 +202,14 @@ describe('service worker', () => {
             expect(
                 worker.staleCacheNames({
                     names: [
-                        'web-ereader-old111',
+                        'page-goblin-old111',
                         CURRENT_CACHE,
-                        'web-ereader-fonts',
+                        'page-goblin-fonts',
                         'other-app-cache',
                     ],
                     current: CURRENT_CACHE,
                 }),
-            ).toEqual(['web-ereader-old111'])
+            ).toEqual(['page-goblin-old111'])
         })
     })
 
@@ -256,7 +256,7 @@ describe('service worker', () => {
 
     describe('activate', () => {
         it('deletes the caches of older builds and then takes control', async () => {
-            for (const name of ['web-ereader-old111', 'web-ereader-fonts', 'other-app-cache']) {
+            for (const name of ['page-goblin-old111', 'page-goblin-fonts', 'other-app-cache']) {
                 await storage.open(name)
             }
             await dispatch('install')
@@ -266,7 +266,7 @@ describe('service worker', () => {
             expect([...storage.stores.keys()].sort()).toEqual([
                 'other-app-cache',
                 CURRENT_CACHE,
-                'web-ereader-fonts',
+                'page-goblin-fonts',
             ])
             expect(claim).toHaveBeenCalledOnce()
         })
@@ -355,7 +355,7 @@ describe('service worker', () => {
             expect(await first!.text()).toBe('font bytes')
             expect(await second!.text()).toBe('font bytes')
             expect(fetchMock).toHaveBeenCalledOnce()
-            expect([...storage.stores.get('web-ereader-fonts')!.keys()]).toEqual([FONT_URL])
+            expect([...storage.stores.get('page-goblin-fonts')!.keys()]).toEqual([FONT_URL])
         })
 
         it('keeps one copy of a font for requests with different spellings of its URL', async () => {
@@ -372,7 +372,7 @@ describe('service worker', () => {
             expect(second).toBe(third)
             expect(await third!.text()).toBe('font bytes')
             expect(fetchMock).toHaveBeenCalledOnce()
-            expect([...storage.stores.get('web-ereader-fonts')!.keys()]).toEqual([FONT_URL])
+            expect([...storage.stores.get('page-goblin-fonts')!.keys()]).toEqual([FONT_URL])
         })
 
         it('does not keep a font response that is not a full success', async () => {
@@ -381,7 +381,7 @@ describe('service worker', () => {
             const response = await dispatchFetch({ url: FONT_URL })
 
             expect(response!.status).toBe(404)
-            expect(storage.stores.get('web-ereader-fonts')!.size).toBe(0)
+            expect(storage.stores.get('page-goblin-fonts')!.size).toBe(0)
         })
 
         it('lets other requests pass and puts nothing in a cache', async () => {

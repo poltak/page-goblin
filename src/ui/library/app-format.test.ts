@@ -13,9 +13,9 @@ describe('formatMegabytes', () => {
 describe('backupFileName', () => {
     it('names the backup file with the local date', () => {
         expect(backupFileName(new Date(2026, 9, 12, 23, 59))).toBe(
-            'web-ereader-backup-2026-10-12.json',
+            'page-goblin-backup-2026-10-12.json',
         )
-        expect(backupFileName(new Date(2027, 0, 5))).toBe('web-ereader-backup-2027-01-05.json')
+        expect(backupFileName(new Date(2027, 0, 5))).toBe('page-goblin-backup-2027-01-05.json')
     })
 })
 

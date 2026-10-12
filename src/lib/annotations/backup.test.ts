@@ -12,7 +12,7 @@ import type {
 import { createBackup, parseBackup, restoreBackup } from './backup'
 import type { BackupBook, BackupFile } from './types'
 
-const NOT_A_BACKUP = 'This file is not a Web eReader backup.'
+const NOT_A_BACKUP = 'This file is not a Page Goblin backup.'
 const EXPORTED_AT = '2024-03-05T14:03:09.000Z'
 
 /** A text of 64 hex digits, as a SHA-256 hash has. */
@@ -98,7 +98,7 @@ function withoutBookId<T extends { bookId: string }>(record: T): Omit<T, 'bookId
 /** The content of a backup file with one book. `book` replaces fields of that book. */
 function fileWith(book: Record<string, unknown> = {}): Record<string, unknown> {
     return {
-        format: 'web-ereader-backup',
+        format: 'page-goblin-backup',
         version: 1,
         exportedAt: EXPORTED_AT,
         books: [
@@ -188,7 +188,7 @@ describe('backup', () => {
             const backup = await createBackup({ storage, now: () => Date.parse(EXPORTED_AT) })
 
             expect(backup).toEqual({
-                format: 'web-ereader-backup',
+                format: 'page-goblin-backup',
                 version: 1,
                 exportedAt: EXPORTED_AT,
                 books: [
@@ -267,7 +267,7 @@ describe('backup', () => {
             const backup = await createBackup({ storage, now: () => 0 })
 
             expect(backup).toEqual({
-                format: 'web-ereader-backup',
+                format: 'page-goblin-backup',
                 version: 1,
                 exportedAt: '1970-01-01T00:00:00.000Z',
                 books: [],
@@ -467,7 +467,7 @@ describe('backup', () => {
             it('does nothing for a backup with no books', async () => {
                 const storage = await openFullLibrary()
                 const before = await contentOf(storage)
-                const backup = { format: 'web-ereader-backup', version: 1, exportedAt: EXPORTED_AT }
+                const backup = { format: 'page-goblin-backup', version: 1, exportedAt: EXPORTED_AT }
 
                 const result = await restoreBackup({ storage, backup: { ...backup, books: [] } })
 
@@ -870,7 +870,7 @@ describe('backup', () => {
 
         it('gives a valid backup back with no change', () => {
             const backup: BackupFile = {
-                format: 'web-ereader-backup',
+                format: 'page-goblin-backup',
                 version: 1,
                 exportedAt: EXPORTED_AT,
                 books: [
@@ -906,14 +906,14 @@ describe('backup', () => {
             ['an array', [fileWith()]],
             ['an empty object', {}],
             ['an empty text', ''],
-            ['text that is not JSON', '{"format": "web-ereader-backup", "version": 1'],
+            ['text that is not JSON', '{"format": "page-goblin-backup", "version": 1'],
             ['JSON text of a text', JSON.stringify(JSON.stringify(fileWith()))],
             ['JSON text of null', 'null'],
             ['a function', () => fileWith()],
             ['no format', { ...fileWith(), format: undefined }],
             ['a format of a different application', { ...fileWith(), format: 'kindle-backup' }],
-            ['a format with a different case', { ...fileWith(), format: 'Web-eReader-Backup' }],
-            ['a format that is an array', { ...fileWith(), format: ['web-ereader-backup'] }],
+            ['a format with a different case', { ...fileWith(), format: 'Page-Goblin-Backup' }],
+            ['a format that is an array', { ...fileWith(), format: ['page-goblin-backup'] }],
             ['no version', { ...fileWith(), version: undefined }],
             ['version 0', { ...fileWith(), version: 0 }],
             ['version 2', { ...fileWith(), version: 2 }],
@@ -964,7 +964,7 @@ describe('backup', () => {
             }
 
             expect(parseBackup(raw)).toEqual({
-                format: 'web-ereader-backup',
+                format: 'page-goblin-backup',
                 version: 1,
                 exportedAt: EXPORTED_AT,
                 books: [

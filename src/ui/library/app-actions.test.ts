@@ -7,7 +7,7 @@ import { createAppActions } from './app-actions'
 import type { AppActions } from './app-actions'
 
 const backup: BackupFile = {
-    format: 'web-ereader-backup',
+    format: 'page-goblin-backup',
     version: 1,
     exportedAt: '2026-10-12T10:00:00.000Z',
     books: [],
@@ -109,9 +109,9 @@ describe('about dialog', () => {
 
         const dialog = el<HTMLDialogElement>('#about-dialog')
         expect(dialog.open).toBe(true)
-        expect(dialog.querySelector('.modal-title')?.textContent).toBe('Web eReader')
+        expect(dialog.querySelector('.modal-title')?.textContent).toBe('Page Goblin')
         // The markup can break a sentence over two lines.
-        expect(dialog.textContent?.replace(/\s+/g, ' ')).toContain('stay on this device')
+        expect(dialog.textContent?.replace(/\s+/g, ' ')).toContain('on this device')
     })
 
     it('hides the version line when the build has no version', () => {
@@ -143,7 +143,7 @@ describe('export backup', () => {
         expect(options.storage).toBe(storage)
         expect(options.now()).toBe(new Date(2026, 9, 12, 15, 30).getTime())
         expect(mocks.downloadTextFile).toHaveBeenCalledWith({
-            name: 'web-ereader-backup-2026-10-12.json',
+            name: 'page-goblin-backup-2026-10-12.json',
             text: JSON.stringify(backup),
             type: 'application/json',
         })
@@ -166,9 +166,9 @@ describe('import backup', () => {
     const file = (text: string) => new File([text], 'backup.json', { type: 'application/json' })
 
     it('restores the file and shows the numbers in one sentence', async () => {
-        await actions.importBackup(file('{"format":"web-ereader-backup"}'))
+        await actions.importBackup(file('{"format":"page-goblin-backup"}'))
 
-        expect(mocks.parseBackup).toHaveBeenCalledWith('{"format":"web-ereader-backup"}')
+        expect(mocks.parseBackup).toHaveBeenCalledWith('{"format":"page-goblin-backup"}')
         expect(mocks.restoreBackup).toHaveBeenCalledWith({ storage, backup })
         expect(toasts()).toEqual([
             {
@@ -181,13 +181,13 @@ describe('import backup', () => {
 
     it('says when the file is not a backup, and writes nothing', async () => {
         mocks.parseBackup.mockImplementation(() => {
-            throw new Error('This file is not a Web eReader backup.')
+            throw new Error('This file is not a Page Goblin backup.')
         })
 
         await actions.importBackup(file('<html>'))
 
         expect(mocks.restoreBackup).not.toHaveBeenCalled()
-        expect(toasts()).toEqual([{ text: 'This file is not a Web eReader backup.', error: true }])
+        expect(toasts()).toEqual([{ text: 'This file is not a Page Goblin backup.', error: true }])
         expect(onRestored).not.toHaveBeenCalled()
     })
 
@@ -211,6 +211,6 @@ describe('import backup', () => {
         await actions.importBackup(broken)
 
         expect(mocks.parseBackup).not.toHaveBeenCalled()
-        expect(toasts()).toEqual([{ text: 'This file is not a Web eReader backup.', error: true }])
+        expect(toasts()).toEqual([{ text: 'This file is not a Page Goblin backup.', error: true }])
     })
 })

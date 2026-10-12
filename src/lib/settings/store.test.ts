@@ -66,7 +66,7 @@ describe('loadSettings', () => {
     it('reads the saved settings from the storage key', () => {
         const storage = createStorage(JSON.stringify({ version: 1, theme: 'sepia', fontSize: 22 }))
         expect(loadSettings(storage)).toEqual({ ...DEFAULT_SETTINGS, theme: 'sepia', fontSize: 22 })
-        expect(storage.getItem).toHaveBeenCalledWith('web-ereader:settings')
+        expect(storage.getItem).toHaveBeenCalledWith('page-goblin:settings')
     })
 
     it('normalises the saved settings', () => {
@@ -371,7 +371,7 @@ describe('createSettingsStore', () => {
             expect(storage.setItem).not.toHaveBeenCalled()
             vi.advanceTimersByTime(1)
             expect(storage.setItem).toHaveBeenCalledTimes(1)
-            expect(storage.setItem.mock.calls[0][0]).toBe('web-ereader:settings')
+            expect(storage.setItem.mock.calls[0][0]).toBe('page-goblin:settings')
             vi.advanceTimersByTime(10_000)
             expect(storage.setItem).toHaveBeenCalledTimes(1)
         })

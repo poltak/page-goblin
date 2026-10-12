@@ -4,13 +4,13 @@
  * `./types` lists the object stores. This module has no knowledge of the record types.
  */
 
-export const DATABASE_NAME = 'web-ereader'
+export const DATABASE_NAME = 'page-goblin'
 export const DATABASE_VERSION = 1
 
 export type StoreName = 'books' | 'files' | 'covers' | 'progress' | 'bookmarks' | 'highlights'
 
 export interface DatabaseOptions {
-    /** The default is `web-ereader`. */
+    /** The default is `page-goblin`. */
     databaseName?: string
     /** The default is the `indexedDB` of the page. A test passes its own factory. */
     indexedDB?: IDBFactory

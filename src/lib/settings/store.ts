@@ -1,7 +1,7 @@
 import { normalizeSettings, SETTINGS_VERSION } from './schema'
 import type { RsvpSettings, Settings, SpeechSettings } from './schema'
 
-export const SETTINGS_STORAGE_KEY = 'web-ereader:settings'
+export const SETTINGS_STORAGE_KEY = 'page-goblin:settings'
 
 /** Time between the last change and the write to storage. */
 export const SETTINGS_SAVE_DELAY_MS = 250

@@ -16,6 +16,6 @@ it('exports the public functions of the annotations module', () => {
         'parseBackup',
         'restoreBackup',
     ])
-    expect(annotations.BACKUP_FORMAT).toBe('web-ereader-backup')
+    expect(annotations.BACKUP_FORMAT).toBe('page-goblin-backup')
     expect(annotations.BACKUP_VERSION).toBe(1)
 })

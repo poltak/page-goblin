@@ -11,7 +11,7 @@ const LIBRARY_HASH = '#/'
 const BOOK_PREFIX = '#/book/'
 
 /** Marks a history entry that the app pushed on top of its library entry. */
-const PUSHED_KEY = 'webEreaderPushed'
+const PUSHED_KEY = 'pageGoblinPushed'
 
 /** The route of a location hash. A hash that is not known gives the library. */
 export function parseHash(hash: string): Route {
