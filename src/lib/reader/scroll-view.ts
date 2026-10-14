@@ -11,7 +11,14 @@ import { createActiveMarks } from './active'
 import { createFrame, type Frame } from './frame'
 import { scrollGeometry } from './geometry'
 import { imagesSettled, lowestWhere, rectOfOffset } from './measure'
-import { createTapTracker, dispatchTap, findTapTarget, focusedLink, linkTarget } from './pointer'
+import {
+    claimClick,
+    createTapTracker,
+    dispatchTap,
+    findTapTarget,
+    focusedLink,
+    linkTarget,
+} from './pointer'
 import { createSelectionWatcher } from './selection'
 import { createSheet, getBaseSheet, overrideCss } from './sheets'
 import { clampSpineIndex, linearNeighbour } from './spine'
@@ -777,6 +784,7 @@ export function createScrollView(options: ReaderViewOptions): ReaderView {
         scroller.addEventListener(type, stopSmooth, { passive: true, signal })
     }
     scroller.addEventListener('keydown', onKeyDown, { signal })
+    scroller.addEventListener('click', (event) => claimClick(event, scroller), { signal })
     scroller.addEventListener('dragstart', (event) => event.preventDefault(), { signal })
 
     // ---- Layout changes from outside ----

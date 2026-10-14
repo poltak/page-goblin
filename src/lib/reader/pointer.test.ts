@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createFakeBook } from '$lib/epub/testing/fake-book'
-import { createTapTracker, dispatchTap, findTapTarget, focusedLink, linkTarget } from './pointer'
+import {
+    claimClick,
+    createTapTracker,
+    dispatchTap,
+    findTapTarget,
+    focusedLink,
+    linkTarget,
+} from './pointer'
 import type { ReaderViewCallbacks } from './types'
 
 /** The path of an event from `target` up to the document, as `composedPath` gives it. */
@@ -289,6 +296,66 @@ describe('createTapTracker', () => {
         element.dispatchEvent(pointer('pointerdown', { time: 0 }))
         element.dispatchEvent(pointer('pointerup', { time: 50 }))
         expect(onTap).not.toHaveBeenCalled()
+    })
+})
+
+describe('claimClick', () => {
+    /** Sends a click to `target`. True when `claimClick` took it at the boundary. */
+    function claimed(boundary: HTMLElement, target: Element): boolean {
+        let taken = false
+        const onClick = (event: MouseEvent): void => {
+            claimClick(event, boundary)
+            taken = event.defaultPrevented
+            // jsdom cannot open a link.
+            event.preventDefault()
+        }
+        boundary.addEventListener('click', onClick)
+        target.dispatchEvent(
+            new MouseEvent('click', { bubbles: true, cancelable: true, composed: true }),
+        )
+        boundary.removeEventListener('click', onClick)
+        return taken
+    }
+
+    it('takes the click on plain text, on a highlight and on an image', () => {
+        const boundary = build(
+            '<p>one <mark class="rd-hl" data-id="h1">two</mark><img src="blob:x"></p>',
+        )
+        expect(claimed(boundary, boundary.querySelector('p')!)).toBe(true)
+        expect(claimed(boundary, boundary.querySelector('mark')!)).toBe(true)
+        expect(claimed(boundary, boundary.querySelector('img')!)).toBe(true)
+    })
+
+    it('takes the click on an internal link, which the view opens', () => {
+        const boundary = build('<p><a data-rd-path="text/notes.xhtml" tabindex="0">3</a></p>')
+        expect(claimed(boundary, boundary.querySelector('a')!)).toBe(true)
+    })
+
+    it('leaves an external link to the browser', () => {
+        const boundary = build(
+            '<p><a href="https://example.com/" data-rd-external=""><em>site</em></a></p>',
+        )
+        expect(claimed(boundary, boundary.querySelector('em')!)).toBe(false)
+    })
+
+    it('leaves a summary element to the browser', () => {
+        const boundary = build('<details><summary><b>More</b></summary><p>Text</p></details>')
+        expect(claimed(boundary, boundary.querySelector('b')!)).toBe(false)
+        expect(claimed(boundary, boundary.querySelector('p')!)).toBe(true)
+    })
+
+    it('reads the elements inside a shadow root', () => {
+        const boundary = build('<div></div>')
+        const shadow = boundary.firstElementChild!.attachShadow({ mode: 'open' })
+        shadow.innerHTML = '<p>Text</p><a href="https://example.com/">site</a>'
+        expect(claimed(boundary, shadow.querySelector('p')!)).toBe(true)
+        expect(claimed(boundary, shadow.querySelector('a')!)).toBe(false)
+    })
+
+    it('does not look outside the boundary', () => {
+        const outer = build('<a href="https://example.com/"><span><i>Text</i></span></a>')
+        const boundary = outer.querySelector('span')!
+        expect(claimed(boundary, boundary.querySelector('i')!)).toBe(true)
     })
 })
 

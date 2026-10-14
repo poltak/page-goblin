@@ -448,6 +448,16 @@ describe.each([
         view.destroy()
         expect(container.style.position).toBe('')
     })
+
+    it('takes the click of a tap on the text, so Chrome on Android selects no word', async () => {
+        const { view, container } = setup(create)
+        await view.ready
+        const text = frameWith(container, 'The first chapter.')!.shadowRoot!.querySelector('p')!
+        const click = new MouseEvent('click', { bubbles: true, cancelable: true, composed: true })
+        text.dispatchEvent(click)
+        expect(click.defaultPrevented).toBe(true)
+        view.destroy()
+    })
 })
 
 describe('paged view', () => {

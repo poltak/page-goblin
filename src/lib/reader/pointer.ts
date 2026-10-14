@@ -163,6 +163,27 @@ export function createTapTracker({ element, accept, onTap }: TapTrackerOptions):
     }
 }
 
+/**
+ * Use the click of a tap on the book text, so the browser does nothing more with the tap.
+ *
+ * Chrome on Android selects the word below a tap for its Touch to Search function when no
+ * click handler of the page used the tap. The views act on the pointer events, which come
+ * before the click, so Chrome saw each tap as not used. A long press still selects a word.
+ *
+ * The click keeps its default action where it has one: the browser opens an external link,
+ * and a summary element opens its details element.
+ */
+export function claimClick(event: MouseEvent, boundary: EventTarget): void {
+    for (const target of event.composedPath()) {
+        if (target === boundary) break
+        const element = target as Element
+        if (element.nodeType !== 1) continue
+        const name = element.localName
+        if (name === 'summary' || (name === 'a' && element.hasAttribute('href'))) return
+    }
+    event.preventDefault()
+}
+
 /** The internal link of a key event, for the Enter key on a link that has the focus. */
 export function focusedLink(event: KeyboardEvent, boundary: EventTarget): Element | null {
     if (event.key !== 'Enter' || event.altKey || event.ctrlKey || event.metaKey) return null

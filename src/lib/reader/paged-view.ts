@@ -30,7 +30,7 @@ import {
     type VelocityTracker,
 } from './gestures'
 import { imagesSettled, lowestWhere, rectOfOffset } from './measure'
-import { dispatchTap, findTapTarget, focusedLink, linkTarget } from './pointer'
+import { claimClick, dispatchTap, findTapTarget, focusedLink, linkTarget } from './pointer'
 import { createSelectionWatcher, hasTextSelection } from './selection'
 import { createSheet, getBaseSheet, overrideCss } from './sheets'
 import { clampSpineIndex, linearNeighbour } from './spine'
@@ -1178,6 +1178,7 @@ export function createPagedView(options: ReaderViewOptions): ReaderView {
     clip.addEventListener('pointerup', onPointerUp, { signal })
     clip.addEventListener('pointercancel', onPointerCancel, { signal })
     clip.addEventListener('lostpointercapture', onLostCapture, { signal })
+    clip.addEventListener('click', (event) => claimClick(event, clip), { signal })
     clip.addEventListener('wheel', onWheel, { passive: false, signal })
     clip.addEventListener('keydown', onKeyDown, { signal })
     clip.addEventListener('dragstart', (event) => event.preventDefault(), { signal })
