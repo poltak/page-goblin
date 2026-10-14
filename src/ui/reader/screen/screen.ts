@@ -298,6 +298,12 @@ export function createReaderScreen(options: ReaderScreenOptions): ReaderScreen {
     stops.push(
         on(topBar, 'focusin', () => dispatchBars('focus')),
         on(bottomBar, 'focusin', () => dispatchBars('focus')),
+        // A hidden bar is outside the screen. A browser without `overflow: clip` can scroll the
+        // screen to it, and the page then moves up. Undo that.
+        on(frame.root, 'scroll', () => {
+            if (frame.root.scrollTop) frame.root.scrollTop = 0
+            if (frame.root.scrollLeft) frame.root.scrollLeft = 0
+        }),
     )
 
     // The bars must not leave below a mouse pointer that rests on them.

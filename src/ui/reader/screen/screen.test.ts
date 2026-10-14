@@ -667,6 +667,29 @@ describe('the stylesheet of the screen', () => {
             /\.reader-show-bars, \.reader-page-turn \{[^}]*&:not\(:focus-visible\) \{[^}]*clip-path: inset\(50%\);/,
         )
     })
+
+    // A hidden bar is outside the screen. A box with hidden overflow can still scroll to it.
+    it('gives the screen no scroll range, with hidden overflow for older browsers', () => {
+        expect(css).toMatch(/\.reader-screen \{[^}]*overflow: hidden; overflow: clip;/)
+    })
+})
+
+describe('the scroll position of the screen', () => {
+    it('goes back to 0 in a browser without overflow: clip', () => {
+        const { frame } = setup()
+        hideBars(frame)
+        // jsdom has no layout. The two values are what a focus move to a hidden bar can give.
+        for (const [name, value] of [
+            ['scrollTop', 109],
+            ['scrollLeft', 4],
+        ] as const) {
+            Object.defineProperty(frame.root, name, { value, writable: true, configurable: true })
+        }
+
+        frame.root.dispatchEvent(new Event('scroll'))
+        expect(frame.root.scrollTop).toBe(0)
+        expect(frame.root.scrollLeft).toBe(0)
+    })
 })
 
 describe('the running head', () => {

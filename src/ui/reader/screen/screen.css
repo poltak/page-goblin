@@ -32,7 +32,14 @@
     height: 100dvh;
     /* The text stays clear of a notch at the side in landscape. The bars have their own inset. */
     padding-inline: var(--safe-left) var(--safe-right);
+    /*
+     * A hidden bar moves out of the screen. With `overflow: hidden` the screen can still scroll
+     * to it, for example for a focus move or a scroll into view, and the page then moves up.
+     * A box with `overflow: clip` cannot scroll. The screen script undoes a scroll in a browser
+     * without `clip`.
+     */
     overflow: hidden;
+    overflow: clip;
     background: var(--rd-bg);
     color: var(--rd-fg);
 }
