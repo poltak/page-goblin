@@ -49,12 +49,25 @@ export async function promptInstall(): Promise<InstallOutcome> {
     }
 }
 
-/** True when the app runs in its own window, not in a browser tab. */
+/**
+ * True when the app runs in its own window with the system bars, not in a browser tab. iOS
+ * and the desktop browsers show the installed app this way. On Android the installed app
+ * fills the screen, and `fillsScreen` is true there.
+ */
 export function isStandalone(): boolean {
     return (
         window.matchMedia?.('(display-mode: standalone)').matches === true ||
         (navigator as Navigator & { standalone?: boolean }).standalone === true
     )
+}
+
+/**
+ * True when the page fills the screen, with no bar of the browser or of the system. The
+ * installed app on Android does, because the manifest asks for the `fullscreen` display mode.
+ * Full screen that the page or the user started gives the same result.
+ */
+export function fillsScreen(): boolean {
+    return window.matchMedia?.('(display-mode: fullscreen)').matches === true
 }
 
 /** True on iPhone and iPad, where the user installs the app from the share menu. */

@@ -16,11 +16,14 @@ describe('web app manifest', () => {
     // A project site on GitHub Pages is below a repository path.
     const manifestUrl = 'https://example.github.io/page-goblin/manifest.webmanifest'
 
-    it('names a standalone app', () => {
+    it('names an app that fills the screen', () => {
         expect(manifest).toMatchObject({
             name: 'Page Goblin',
             short_name: 'Page Goblin',
-            display: 'standalone',
+            // Android hides its status bar and its navigation bar for this mode. A page
+            // cannot hide them or set the colour of the navigation bar for each theme. iOS
+            // and the desktop browsers show the app as a standalone app.
+            display: 'fullscreen',
             background_color: '#fbfaf8',
             theme_color: '#fbfaf8',
             lang: 'en',

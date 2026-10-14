@@ -1,6 +1,7 @@
 /**
  * Full screen for the speed reader, with the prefixed names of older Safari. iPhone Safari has
- * no full screen for an element, so `supported` is false there.
+ * no full screen for an element, so `supported` is false there. It is also false in the
+ * installed app on Android, which fills the screen without the API.
  *
  * The request goes to the root element, as the reader screen does it. The two full screen
  * buttons then show the same state, and the dialogs of the page stay visible. The state is
@@ -8,6 +9,7 @@
  * without this code.
  */
 
+import { fillsScreen } from '$lib/pwa/install'
 import { on } from '../../dom'
 
 type MaybePromise = Promise<void> | void
@@ -49,14 +51,16 @@ export function createFullscreen({ onChange }: FullscreenOptions): FullscreenCon
         typeof page.exitFullscreen === 'function' || typeof page.webkitExitFullscreen === 'function'
     // False in a frame that has no permission for full screen.
     const enabled = (page.fullscreenEnabled ?? page.webkitFullscreenEnabled) !== false
-    const supported = hasRequest && hasExit && enabled
-
-    /** Only for `leave`. It never says that the page is in full screen. */
-    let entered = false
-
     function isActive(): boolean {
         return (page.fullscreenElement ?? page.webkitFullscreenElement ?? null) !== null
     }
+
+    // With no full screen element, a page that fills the screen is the installed app in its
+    // display mode. Full screen changes nothing there.
+    const supported = hasRequest && hasExit && enabled && !(fillsScreen() && !isActive())
+
+    /** Only for `leave`. It never says that the page is in full screen. */
+    let entered = false
 
     function enter(): void {
         entered = true

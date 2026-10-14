@@ -6,6 +6,7 @@
  * screen without this code, so a flag of our own would be wrong after that.
  */
 
+import { fillsScreen } from '$lib/pwa/install'
 import { on } from '../../dom'
 
 type MaybePromise = Promise<void> | void
@@ -26,7 +27,10 @@ export interface FullscreenOptions {
 }
 
 export interface FullscreenControl {
-    /** False when the browser has no Fullscreen API for elements, as on an iPhone. */
+    /**
+     * False when the browser has no Fullscreen API for elements, as on an iPhone. Also false
+     * in the installed app on Android, which fills the screen without the API.
+     */
     readonly supported: boolean
     readonly active: boolean
     /** Rejects when the browser refuses the request. */
@@ -43,16 +47,19 @@ export function createFullscreen({ onChange }: FullscreenOptions): FullscreenCon
     const request: (() => MaybePromise) | undefined =
         root.requestFullscreen ?? root.webkitRequestFullscreen
     const exit: (() => MaybePromise) | undefined = page.exitFullscreen ?? page.webkitExitFullscreen
+    const element = (): Element | null =>
+        page.fullscreenElement ?? page.webkitFullscreenElement ?? null
+
+    // With no full screen element, a page that fills the screen is the installed app in its
+    // display mode. Full screen changes nothing there.
     const supported =
         typeof request === 'function' &&
         typeof exit === 'function' &&
-        (page.fullscreenEnabled ?? page.webkitFullscreenEnabled) !== false
+        (page.fullscreenEnabled ?? page.webkitFullscreenEnabled) !== false &&
+        !(fillsScreen() && element() === null)
 
     // Only for `leave`. It never says that the page is in full screen.
     let entered = false
-
-    const element = (): Element | null =>
-        page.fullscreenElement ?? page.webkitFullscreenElement ?? null
 
     const handleChange = (): void => {
         const active = element() !== null

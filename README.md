@@ -20,6 +20,7 @@ The app is plain HTML, CSS and TypeScript. It has no UI library and no runtime n
 - **Listen.** The browser reads the book aloud. A marker follows the voice and the pages turn by themselves.
 - **Export.** Highlights as Markdown or in the Kindle "My Clippings.txt" format. A backup file holds the positions, bookmarks and highlights of all books.
 - **Offline.** After the first visit the app starts with no network.
+- **Full screen.** The installed app on Android shows no status bar and no navigation bar.
 
 ## Run it
 

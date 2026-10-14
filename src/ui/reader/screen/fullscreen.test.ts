@@ -50,6 +50,7 @@ function make(onChange: (active: boolean) => void = () => {}): FullscreenControl
 afterEach(() => {
     for (const control of controls.splice(0)) control.destroy()
     for (const [target, name] of added.splice(0)) Reflect.deleteProperty(target, name)
+    vi.unstubAllGlobals()
 })
 
 describe('createFullscreen', () => {
@@ -65,6 +66,27 @@ describe('createFullscreen', () => {
         installStandard()
         define(document, 'fullscreenEnabled', false)
         expect(make().supported).toBe(false)
+    })
+
+    it('is not supported in the installed app that fills the screen already', () => {
+        installStandard()
+        vi.stubGlobal(
+            'matchMedia',
+            vi.fn((query: string) => ({ matches: query === '(display-mode: fullscreen)' })),
+        )
+        expect(make().supported).toBe(false)
+    })
+
+    it('stays supported when full screen of the page gives the display mode', () => {
+        installStandard()
+        define(document, 'fullscreenElement', document.documentElement)
+        vi.stubGlobal(
+            'matchMedia',
+            vi.fn((query: string) => ({ matches: query === '(display-mode: fullscreen)' })),
+        )
+        const fullscreen = make()
+        expect(fullscreen.supported).toBe(true)
+        expect(fullscreen.active).toBe(true)
     })
 
     it('asks for full screen on the root element', async () => {
