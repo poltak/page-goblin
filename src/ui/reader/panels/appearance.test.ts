@@ -605,6 +605,40 @@ describe('publisher styles and keep screen awake', () => {
         toggle('keepAwake').click()
         expect(store.get().keepAwake).toBe(true)
     })
+
+    it('writes the chapter title above the page and has the help text', () => {
+        mount()
+        const label = toggle('runningHead').closest('label')!
+        expect(label.querySelector('.field-label')!.textContent).toBe('Chapter title')
+        expect(label.querySelector('.field-help')!.textContent!.trim()).toBe('Above the page.')
+        expect(toggle('runningHead').checked).toBe(true)
+
+        toggle('runningHead').click()
+        expect(store.get().runningHead).toBe(false)
+        expect(store.get().runningFoot).toBe(true)
+        toggle('runningHead').click()
+        expect(store.get().runningHead).toBe(true)
+    })
+
+    it('writes the progress below the page and has the help text', () => {
+        mount({ saved: { runningFoot: false } })
+        const label = toggle('runningFoot').closest('label')!
+        expect(label.querySelector('.field-label')!.textContent).toBe('Progress')
+        expect(label.querySelector('.field-help')!.textContent!.replace(/\s+/g, ' ').trim()).toBe(
+            'Below the page. Tap the bottom right corner of the screen to show or hide it.',
+        )
+        expect(toggle('runningFoot').checked).toBe(false)
+
+        toggle('runningFoot').click()
+        expect(store.get().runningFoot).toBe(true)
+        expect(store.get().runningHead).toBe(true)
+    })
+
+    it('shows a change of the progress setting that comes from the page', () => {
+        mount()
+        store.update({ runningFoot: false })
+        expect(toggle('runningFoot').checked).toBe(false)
+    })
 })
 
 describe('reset', () => {
@@ -622,6 +656,8 @@ describe('reset', () => {
         columns: 2,
         pageTurn: 'none',
         keepAwake: false,
+        runningHead: false,
+        runningFoot: false,
         librarySort: 'title',
         readingWpm: 400,
     }
@@ -662,6 +698,8 @@ describe('reset', () => {
         expect(toggle('hyphenate').checked).toBe(false)
         expect(toggle('publisherStyles').checked).toBe(true)
         expect(toggle('keepAwake').checked).toBe(true)
+        expect(toggle('runningHead').checked).toBe(true)
+        expect(toggle('runningFoot').checked).toBe(true)
     })
 
     it('offers Undo, which puts the settings back', () => {

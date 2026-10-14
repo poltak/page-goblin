@@ -55,7 +55,13 @@ type ChoiceKey = keyof typeof CHOICES
 const CHOICE_KEYS = Object.keys(CHOICES) as ChoiceKey[]
 
 /** The switches that write a boolean setting of the same name. */
-const SWITCH_KEYS = ['hyphenate', 'publisherStyles', 'keepAwake'] as const
+const SWITCH_KEYS = [
+    'hyphenate',
+    'publisherStyles',
+    'keepAwake',
+    'runningHead',
+    'runningFoot',
+] as const
 
 type SwitchKey = (typeof SWITCH_KEYS)[number]
 
@@ -74,6 +80,8 @@ export const APPEARANCE_KEYS = [
     'columns',
     'pageTurn',
     'keepAwake',
+    'runningHead',
+    'runningFoot',
 ] as const satisfies readonly (keyof Settings)[]
 
 /** The line height of the slider when the settings and the defaults have none. */

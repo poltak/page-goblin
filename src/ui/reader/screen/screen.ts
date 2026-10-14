@@ -459,6 +459,18 @@ export function createReaderScreen(options: ReaderScreenOptions): ReaderScreen {
         renderBookmark()
     }
 
+    /**
+     * The running head and foot keep their height when their text is hidden, so the page text
+     * does not move.
+     */
+    function renderRunningLines(): void {
+        const { runningHead, runningFoot } = settings.get()
+        frame.headText.hidden = !runningHead
+        frame.footPage.hidden = !runningFoot
+        frame.footProgress.hidden = !runningFoot
+        frame.footToggle.setAttribute('aria-pressed', String(runningFoot))
+    }
+
     /** What a screen reader says for the slider position. */
     function setValueText(text: string): void {
         if (slider.getAttribute('aria-valuetext') !== text) {
@@ -495,6 +507,12 @@ export function createReaderScreen(options: ReaderScreenOptions): ReaderScreen {
         // The session measures the reading speed, and the time that is left depends on it.
         settings.subscribe((next, previous) => {
             if (next.readingWpm !== previous.readingWpm) renderPosition()
+            if (
+                next.runningHead !== previous.runningHead ||
+                next.runningFoot !== previous.runningFoot
+            ) {
+                renderRunningLines()
+            }
         }),
         on(slider, 'input', () => {
             // A touch gives the slider no focus in some browsers, so its use keeps the bars.
@@ -631,6 +649,12 @@ export function createReaderScreen(options: ReaderScreenOptions): ReaderScreen {
         on(frame.showBars, 'click', showBarsFromKeyboard),
         on(frame.prevPage, 'click', () => turnPage(false, false)),
         on(frame.nextPage, 'click', () => turnPage(true, false)),
+        on(frame.footToggle, 'click', (event) => {
+            settings.update({ runningFoot: !settings.get().runningFoot })
+            // A button that keeps the focus after a tap takes the Space key, which turns the
+            // page. A click from the keyboard has a detail of 0, and its focus stays.
+            if (event.detail > 0) frame.footToggle.blur()
+        }),
         on(frame.moreMenu, 'beforetoggle', (event) => {
             menuOpen = (event as ToggleEvent).newState === 'open'
         }),
@@ -672,6 +696,7 @@ export function createReaderScreen(options: ReaderScreenOptions): ReaderScreen {
         const covered = session.mode === 'speed'
         frame.prevPage.hidden = covered
         frame.nextPage.hidden = covered
+        frame.footToggle.hidden = covered
     }
 
     function scrollLines(lines: number): boolean {
@@ -765,6 +790,7 @@ export function createReaderScreen(options: ReaderScreenOptions): ReaderScreen {
     frame.bookAuthor.hidden = session.record.author.trim() === ''
     setRangeValue(slider)
     renderPosition()
+    renderRunningLines()
     renderFullscreen()
     renderPageButtons()
     dispatchBars('open')

@@ -29,6 +29,8 @@ export interface ScreenFrame {
     dock: HTMLElement
     footPage: HTMLElement
     footProgress: HTMLElement
+    /** Shows and hides the text of the running foot. It lies over the right half of the foot. */
+    footToggle: HTMLButtonElement
     backButton: HTMLButtonElement
     slider: HTMLInputElement
     /** The label above the thumb during a drag: the contents entry, then the percent. */
@@ -94,6 +96,7 @@ export function createFrame(): ScreenFrame {
         dock: qs('.reader-dock', root),
         footPage: qs('.reader-foot-page', root),
         footProgress: qs('.reader-foot-progress', root),
+        footToggle: qs('.reader-foot-toggle', root),
         backButton: qs('.reader-back', root),
         slider: qs('.reader-slider .slider', root),
         sliderLabel: qs('.reader-slider-label', root),

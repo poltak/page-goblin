@@ -744,6 +744,113 @@ describe('the running foot', () => {
     })
 })
 
+describe('the settings for the running head and foot', () => {
+    const head = (frame: ScreenFrame) => frame.root.querySelector<HTMLElement>('.reader-head')!
+    const foot = (frame: ScreenFrame) => frame.root.querySelector<HTMLElement>('.reader-foot')!
+
+    it('shows the two lines by default', () => {
+        const { frame } = setup()
+        expect(frame.headText.hidden).toBe(false)
+        expect(frame.footPage.hidden).toBe(false)
+        expect(frame.footProgress.hidden).toBe(false)
+        expect(frame.footToggle.getAttribute('aria-pressed')).toBe('true')
+    })
+
+    it('hides the text of a line that is off, and keeps the line', () => {
+        const { frame } = setup({}, { runningHead: false, runningFoot: false })
+        expect(frame.headText.hidden).toBe(true)
+        expect(frame.footPage.hidden).toBe(true)
+        expect(frame.footProgress.hidden).toBe(true)
+        // The page text must not move, so the two lines stay in the layout.
+        expect(head(frame).hidden).toBe(false)
+        expect(foot(frame).hidden).toBe(false)
+        expect(frame.footToggle.getAttribute('aria-pressed')).toBe('false')
+    })
+
+    it('follows a change of the settings', () => {
+        const { frame, settings } = setup()
+        settings.update({ runningHead: false })
+        expect(frame.headText.hidden).toBe(true)
+        expect(frame.footProgress.hidden).toBe(false)
+
+        settings.update({ runningHead: true, runningFoot: false })
+        expect(frame.headText.hidden).toBe(false)
+        expect(frame.footPage.hidden).toBe(true)
+        expect(frame.footProgress.hidden).toBe(true)
+    })
+
+    it('keeps the hidden text up to date', () => {
+        const { frame, session, settings } = setup({}, { runningFoot: false, readingWpm: 200 })
+        session.state.fraction = 0.5
+        session.state.wordsRemaining = { chapter: 150, book: 900 }
+        session.relocate({ locator: { spineIndex: 1, offset: 250 }, page: 9 })
+
+        settings.update({ runningFoot: true })
+        expect(frame.footPage.textContent).toBe('Page 9 of 12')
+        expect(frame.footProgress.textContent).toBe('50% · less than 1 min left in chapter')
+    })
+
+    it('has a button over the foot that shows and hides the text of the foot', () => {
+        const { frame, settings } = setup()
+        hideBars(frame)
+        expect(frame.footToggle.type).toBe('button')
+        expect(frame.footToggle.getAttribute('aria-label')).toBe('Show the progress')
+        expect(foot(frame).nextElementSibling).toBe(frame.footToggle)
+
+        frame.footToggle.click()
+        expect(settings.get().runningFoot).toBe(false)
+        expect(frame.footProgress.hidden).toBe(true)
+        expect(frame.footToggle.getAttribute('aria-pressed')).toBe('false')
+        // The chapter title has its own setting.
+        expect(settings.get().runningHead).toBe(true)
+        expect(frame.headText.hidden).toBe(false)
+
+        frame.footToggle.click()
+        expect(settings.get().runningFoot).toBe(true)
+        expect(frame.footProgress.hidden).toBe(false)
+        expect(frame.footToggle.getAttribute('aria-pressed')).toBe('true')
+    })
+
+    it('does not show the bars for a tap on the button', () => {
+        const { frame, session } = setup()
+        hideBars(frame)
+        pointer(frame.footToggle, 'pointerdown', { pointerType: 'touch' })
+        pointer(frame.footToggle, 'pointerup', { pointerType: 'touch' })
+        frame.footToggle.click()
+
+        expect(barsVisible(frame)).toBe(false)
+        expect(session.next).not.toHaveBeenCalled()
+    })
+
+    it('gives the focus back to the page after a tap, and keeps it for the keyboard', () => {
+        const { frame, settings } = setup()
+        hideBars(frame)
+
+        frame.footToggle.focus()
+        frame.footToggle.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }))
+        expect(settings.get().runningFoot).toBe(false)
+        expect(document.activeElement).not.toBe(frame.footToggle)
+
+        // The Enter key and the Space key send a click with a detail of 0.
+        frame.footToggle.focus()
+        frame.footToggle.click()
+        expect(settings.get().runningFoot).toBe(true)
+        expect(document.activeElement).toBe(frame.footToggle)
+    })
+
+    it('has no button below the speed reader', () => {
+        const { frame, session } = setup()
+        session.setMode('speed')
+        expect(frame.footToggle.hidden).toBe(true)
+
+        session.setMode('listen')
+        expect(frame.footToggle.hidden).toBe(false)
+
+        session.setMode('read')
+        expect(frame.footToggle.hidden).toBe(false)
+    })
+})
+
 describe('the progress slider', () => {
     it('shows the position in the book', () => {
         const { frame } = setup()

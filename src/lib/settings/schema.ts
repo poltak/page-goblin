@@ -56,6 +56,10 @@ export interface Settings {
     pageTurn: PageTurnAnimation
     /** Keep the screen on in the speed reader and during speech. */
     keepAwake: boolean
+    /** Show the chapter title above the page. */
+    runningHead: boolean
+    /** Show the page number and the progress below the page. */
+    runningFoot: boolean
     rsvp: RsvpSettings
     speech: SpeechSettings
     librarySort: LibrarySort
@@ -128,6 +132,8 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
     columns: 'auto',
     pageTurn: 'slide',
     keepAwake: true,
+    runningHead: true,
+    runningFoot: true,
     rsvp: Object.freeze({
         wpm: 250,
         contextWords: 5,
@@ -258,6 +264,8 @@ export function normalizeSettings(raw: unknown): Settings {
         columns: oneOf(source.columns, COLUMN_CHOICES) ?? defaults.columns,
         pageTurn: oneOf(source.pageTurn, PAGE_TURN_ANIMATIONS) ?? defaults.pageTurn,
         keepAwake: toBoolean(source.keepAwake) ?? defaults.keepAwake,
+        runningHead: toBoolean(source.runningHead) ?? defaults.runningHead,
+        runningFoot: toBoolean(source.runningFoot) ?? defaults.runningFoot,
         rsvp: {
             wpm: toNumber(rsvp.wpm, RSVP_WPM) ?? defaults.rsvp.wpm,
             contextWords:

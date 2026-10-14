@@ -46,6 +46,8 @@ const CUSTOM: Settings = {
     columns: 2,
     pageTurn: 'fade',
     keepAwake: false,
+    runningHead: false,
+    runningFoot: false,
     rsvp: {
         wpm: 420,
         contextWords: 12,
@@ -82,6 +84,8 @@ describe('DEFAULT_SETTINGS', () => {
             columns: 'auto',
             pageTurn: 'slide',
             keepAwake: true,
+            runningHead: true,
+            runningFoot: true,
             rsvp: {
                 wpm: 250,
                 contextWords: 5,
@@ -218,16 +222,19 @@ describe('normalizeSettings', () => {
     })
 
     describe('booleans', () => {
-        it.each(['hyphenate', 'publisherStyles', 'keepAwake'] as const)(
-            '%s accepts only true and false',
-            (key) => {
-                expect(normalizeSettings({ [key]: true })[key]).toBe(true)
-                expect(normalizeSettings({ [key]: false })[key]).toBe(false)
-                for (const value of [undefined, null, 0, 1, 'true', 'false', '', {}, []]) {
-                    expect(normalizeSettings({ [key]: value })[key]).toBe(DEFAULT_SETTINGS[key])
-                }
-            },
-        )
+        it.each([
+            'hyphenate',
+            'publisherStyles',
+            'keepAwake',
+            'runningHead',
+            'runningFoot',
+        ] as const)('%s accepts only true and false', (key) => {
+            expect(normalizeSettings({ [key]: true })[key]).toBe(true)
+            expect(normalizeSettings({ [key]: false })[key]).toBe(false)
+            for (const value of [undefined, null, 0, 1, 'true', 'false', '', {}, []]) {
+                expect(normalizeSettings({ [key]: value })[key]).toBe(DEFAULT_SETTINGS[key])
+            }
+        })
 
         it.each(['longWordDelay', 'rampUp', 'showPivot', 'pauseAtChapterStart'] as const)(
             'rsvp.%s accepts only true and false',

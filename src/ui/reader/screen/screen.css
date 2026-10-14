@@ -89,6 +89,25 @@
     text-overflow: ellipsis;
 }
 
+/*
+ * The button that shows and hides the text of the running foot. It is in the grid cell of the
+ * foot and covers its right half. The foot keeps its height when its text is hidden, so the
+ * page text does not move and the button stays in its place.
+ */
+.reader-foot-toggle {
+    grid-row: 4;
+    grid-column: 1;
+    justify-self: end;
+    width: 50%;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    cursor: pointer;
+    /* The screen cuts off a focus ring that is outside it. */
+    outline-offset: calc(-1 * var(--space-1));
+}
+
 /* ---------- Stage, status and dock ---------- */
 
 .reader-stage {
