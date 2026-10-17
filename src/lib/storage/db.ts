@@ -5,9 +5,10 @@
  */
 
 export const DATABASE_NAME = 'page-goblin'
-export const DATABASE_VERSION = 1
+export const DATABASE_VERSION = 2
 
-export type StoreName = 'books' | 'files' | 'covers' | 'progress' | 'bookmarks' | 'highlights'
+export type StoreName =
+    'books' | 'files' | 'covers' | 'progress' | 'bookmarks' | 'highlights' | 'outbox' | 'syncState'
 
 export interface DatabaseOptions {
     /** The default is `page-goblin`. */
@@ -56,6 +57,10 @@ function upgrade(db: IDBDatabase, oldVersion: number): void {
         db.createObjectStore('progress', { keyPath: 'bookId' })
         db.createObjectStore('bookmarks', { keyPath: 'id' }).createIndex('bookId', 'bookId')
         db.createObjectStore('highlights', { keyPath: 'id' }).createIndex('bookId', 'bookId')
+    }
+    if (oldVersion < 2) {
+        db.createObjectStore('outbox', { keyPath: 'id' })
+        db.createObjectStore('syncState')
     }
 }
 

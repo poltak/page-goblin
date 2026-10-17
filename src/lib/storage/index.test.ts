@@ -21,5 +21,5 @@ it('exports the public functions of the storage module', () => {
         'wordsRemaining',
     ])
     expect(storage.DATABASE_NAME).toBe('page-goblin')
-    expect(storage.DATABASE_VERSION).toBe(1)
+    expect(storage.DATABASE_VERSION).toBe(2)
 })

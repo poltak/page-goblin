@@ -1,14 +1,21 @@
 import { compareLocators } from '$lib/types'
-import { createDatabase, type DatabaseOptions, type StoreName } from './db'
+import { createDatabase, type Database, type DatabaseOptions, type StoreName } from './db'
 import type {
     BookmarkRecord,
     BookRecord,
+    ChangeTracker,
     HighlightRecord,
     LibraryStorage,
+    OutboxEntry,
     ProgressRecord,
 } from './types'
 
-export type LibraryStorageOptions = DatabaseOptions
+export interface LibraryStorageOptions extends DatabaseOptions {
+    /** While `changes.isOn()` is true, each write also writes the outbox of the sync. */
+    changes?: ChangeTracker
+    /** Epoch milliseconds for the time of a change. The default is `Date.now`. */
+    now?: () => number
+}
 
 /**
  * `LibraryStorage` with the write that repairs a book whose stored file is missing. The
@@ -17,9 +24,12 @@ export type LibraryStorageOptions = DatabaseOptions
 export interface LibraryFileStorage extends LibraryStorage {
     /**
      * Writes the file of a book that is in the library, in the place of the file that is
-     * there. Does nothing when the library does not have the book.
+     * there. Does nothing when the library does not have the book. A book that had only a
+     * record on this device then has its file.
      */
     putFile(id: string, file: Blob): Promise<void>
+    /** The connection to the database. The sync runs its own transactions on it. */
+    readonly database: Database
 }
 
 interface ReadOptions<T> {
@@ -33,6 +43,22 @@ interface WriteOptions {
     failureMessage: string
     durability?: IDBTransactionDurability
     request: (store: IDBObjectStore) => void
+    /** The outbox entry of the change. Without it, the write does not touch the outbox. */
+    change?: () => OutboxEntry
+}
+
+export function outboxEntry(
+    kind: OutboxEntry['kind'],
+    key: string,
+    change: { deleted: boolean; changedAt: number },
+): OutboxEntry {
+    return { id: `${kind}:${key}`, kind, key, ...change }
+}
+
+/** The record without the field that is true only on a device that has no file. */
+export function withFile(book: BookRecord): BookRecord {
+    const { remoteOnly: _, ...rest } = book
+    return rest
 }
 
 function compareBookmarks(a: BookmarkRecord, b: BookmarkRecord): number {
@@ -50,6 +76,31 @@ function compareHighlights(a: HighlightRecord, b: HighlightRecord): number {
 
 export function createLibraryStorage(options: LibraryStorageOptions = {}): LibraryFileStorage {
     const database = createDatabase(options)
+    const { changes } = options
+    const now = options.now ?? Date.now
+
+    /** True when the write that starts now must also write the outbox. */
+    function tracking(): boolean {
+        if (!changes) return false
+        try {
+            return changes.isOn()
+        } catch {
+            return false
+        }
+    }
+
+    /** Tells the tracker about a write to the outbox. The write itself is complete. */
+    function afterTracked<T>(tracked: boolean, write: Promise<T>): Promise<T> {
+        if (!tracked) return write
+        return write.then((result) => {
+            try {
+                changes?.onChange()
+            } catch (error) {
+                console.error(error)
+            }
+            return result
+        })
+    }
 
     function read<T>({ store, failureMessage, request }: ReadOptions<T>): Promise<T> {
         return database.run<T>({
@@ -63,19 +114,25 @@ export function createLibraryStorage(options: LibraryStorageOptions = {}): Libra
         })
     }
 
-    function write({ store, failureMessage, durability, request }: WriteOptions): Promise<void> {
-        return database.run({
-            stores: store,
+    function write(writeOptions: WriteOptions): Promise<void> {
+        const { store, failureMessage, durability, request, change } = writeOptions
+        const tracked = change !== undefined && tracking()
+        const written = database.run({
+            stores: tracked ? [store, 'outbox'] : store,
             mode: 'readwrite',
             failureMessage,
             durability,
             work: (transaction) => {
                 request(transaction.objectStore(store))
+                if (tracked) transaction.objectStore('outbox').put(change())
             },
         })
+        return afterTracked(tracked, written)
     }
 
     return {
+        database,
+
         listBooks: () =>
             read<BookRecord[]>({
                 store: 'books',
@@ -97,9 +154,12 @@ export function createLibraryStorage(options: LibraryStorageOptions = {}): Libra
                 request: (store) => store.index('fileHash').get(fileHash),
             }),
 
-        addBook: ({ record, file, cover }) =>
-            database.run({
-                stores: ['books', 'files', 'covers'],
+        addBook: ({ record, file, cover }) => {
+            const tracked = tracking()
+            const stores: StoreName[] = ['books', 'files', 'covers']
+            if (tracked) stores.push('outbox')
+            const written = database.run({
+                stores,
                 mode: 'readwrite',
                 failureMessage: 'Unable to save the book.',
                 work: (transaction) => {
@@ -109,39 +169,90 @@ export function createLibraryStorage(options: LibraryStorageOptions = {}): Libra
                     transaction.objectStore('books').add(record)
                     transaction.objectStore('files').put(file, record.id)
                     if (cover) transaction.objectStore('covers').put(cover, record.id)
-                },
-            }),
-
-        updateBook: (id, patch) =>
-            write({
-                store: 'books',
-                failureMessage: 'Unable to update the book.',
-                request: (store) => {
-                    const current = store.get(id)
-                    current.onsuccess = () => {
-                        if (current.result) store.put({ ...current.result, ...patch, id })
+                    if (tracked) {
+                        const outbox = transaction.objectStore('outbox')
+                        const change = { deleted: false, changedAt: record.addedAt }
+                        outbox.put(outboxEntry('book', record.fileHash, change))
+                        outbox.put(outboxEntry('file', record.fileHash, change))
                     }
                 },
-            }),
+            })
+            return afterTracked(tracked, written)
+        },
 
-        deleteBook: (id) =>
-            database.run({
-                stores: ['books', 'files', 'covers', 'progress', 'bookmarks', 'highlights'],
+        updateBook: (id, patch) => {
+            const tracked = tracking()
+            const written = database.run({
+                stores: tracked ? ['books', 'outbox'] : 'books',
+                mode: 'readwrite',
+                failureMessage: 'Unable to update the book.',
+                work: (transaction) => {
+                    const store = transaction.objectStore('books')
+                    const current = store.get(id)
+                    current.onsuccess = () => {
+                        const book = current.result as BookRecord | undefined
+                        if (!book) return
+                        store.put({ ...book, ...patch, id })
+                        if (!tracked) return
+                        transaction.objectStore('outbox').put(
+                            outboxEntry('book', book.fileHash, {
+                                deleted: false,
+                                changedAt: now(),
+                            }),
+                        )
+                    }
+                },
+            })
+            return afterTracked(tracked, written)
+        },
+
+        deleteBook: (id) => {
+            const tracked = tracking()
+            const stores: StoreName[] = [
+                'books',
+                'files',
+                'covers',
+                'progress',
+                'bookmarks',
+                'highlights',
+            ]
+            if (tracked) stores.push('outbox')
+            const written = database.run({
+                stores,
                 mode: 'readwrite',
                 failureMessage: 'Unable to delete the book.',
                 work: (transaction) => {
+                    const deleted = { deleted: true, changedAt: now() }
+                    const outbox = tracked ? transaction.objectStore('outbox') : null
+                    if (outbox) {
+                        // The other devices remove the book, its progress and its notes.
+                        const book = transaction.objectStore('books').get(id)
+                        book.onsuccess = () => {
+                            const record = book.result as BookRecord | undefined
+                            if (!record) return
+                            outbox.put(outboxEntry('book', record.fileHash, deleted))
+                            outbox.put(outboxEntry('progress', record.fileHash, deleted))
+                            outbox.delete(outboxEntry('file', record.fileHash, deleted).id)
+                        }
+                    }
                     for (const name of ['books', 'files', 'covers', 'progress']) {
                         transaction.objectStore(name).delete(id)
                     }
-                    for (const name of ['bookmarks', 'highlights']) {
+                    for (const name of ['bookmarks', 'highlights'] as const) {
                         const store = transaction.objectStore(name)
                         const keys = store.index('bookId').getAllKeys(id)
                         keys.onsuccess = () => {
-                            for (const key of keys.result) store.delete(key)
+                            for (const key of keys.result) {
+                                store.delete(key)
+                                const kind = name === 'bookmarks' ? 'bookmark' : 'highlight'
+                                outbox?.put(outboxEntry(kind, String(key), deleted))
+                            }
                         }
                     }
                 },
-            }),
+            })
+            return afterTracked(tracked, written)
+        },
 
         getFile: (id) =>
             read<Blob | undefined>({
@@ -150,20 +261,35 @@ export function createLibraryStorage(options: LibraryStorageOptions = {}): Libra
                 request: (store) => store.get(id),
             }),
 
-        putFile: (id, file) =>
-            database.run({
-                stores: ['books', 'files'],
+        putFile: (id, file) => {
+            const tracked = tracking()
+            const written = database.run({
+                stores: tracked ? ['books', 'files', 'outbox'] : ['books', 'files'],
                 mode: 'readwrite',
                 failureMessage: 'Unable to save the book file.',
                 work: (transaction) => {
                     // The user can remove the book while the import reads the file. A file
                     // with no book record would stay in the storage, and nothing removes it.
-                    const key = transaction.objectStore('books').getKey(id)
-                    key.onsuccess = () => {
-                        if (key.result !== undefined) transaction.objectStore('files').put(file, id)
+                    const books = transaction.objectStore('books')
+                    const current = books.get(id)
+                    current.onsuccess = () => {
+                        const book = current.result as BookRecord | undefined
+                        if (!book) return
+                        transaction.objectStore('files').put(file, id)
+                        if (book.remoteOnly !== undefined) books.put(withFile(book))
+                        if (!tracked) return
+                        // The server can have no copy, for example after a failed upload.
+                        transaction.objectStore('outbox').put(
+                            outboxEntry('file', book.fileHash, {
+                                deleted: false,
+                                changedAt: now(),
+                            }),
+                        )
                     }
                 },
-            }),
+            })
+            return afterTracked(tracked, written)
+        },
 
         getCover: (id) =>
             read<Blob | undefined>({
@@ -187,13 +313,32 @@ export function createLibraryStorage(options: LibraryStorageOptions = {}): Libra
             }),
 
         // This runs on each position change. It must not open the stores with large records.
-        saveProgress: (progress) =>
-            write({
-                store: 'progress',
+        // The books store has no file data, so the sync can read the file hash there.
+        saveProgress: (progress) => {
+            const tracked = tracking()
+            const written = database.run({
+                stores: tracked ? ['progress', 'books', 'outbox'] : 'progress',
+                mode: 'readwrite',
                 failureMessage: 'Unable to save the reading progress.',
                 durability: 'relaxed',
-                request: (store) => store.put(progress),
-            }),
+                work: (transaction) => {
+                    transaction.objectStore('progress').put(progress)
+                    if (!tracked) return
+                    const book = transaction.objectStore('books').get(progress.bookId)
+                    book.onsuccess = () => {
+                        const record = book.result as BookRecord | undefined
+                        if (!record) return
+                        transaction.objectStore('outbox').put(
+                            outboxEntry('progress', record.fileHash, {
+                                deleted: false,
+                                changedAt: progress.updatedAt,
+                            }),
+                        )
+                    }
+                },
+            })
+            return afterTracked(tracked, written)
+        },
 
         listBookmarks: (bookId) =>
             read<BookmarkRecord[]>({
@@ -207,6 +352,11 @@ export function createLibraryStorage(options: LibraryStorageOptions = {}): Libra
                 store: 'bookmarks',
                 failureMessage: 'Unable to save the bookmark.',
                 request: (store) => store.put(bookmark),
+                change: () =>
+                    outboxEntry('bookmark', bookmark.id, {
+                        deleted: false,
+                        changedAt: bookmark.createdAt,
+                    }),
             }),
 
         deleteBookmark: (id) =>
@@ -214,6 +364,7 @@ export function createLibraryStorage(options: LibraryStorageOptions = {}): Libra
                 store: 'bookmarks',
                 failureMessage: 'Unable to delete the bookmark.',
                 request: (store) => store.delete(id),
+                change: () => outboxEntry('bookmark', id, { deleted: true, changedAt: now() }),
             }),
 
         listHighlights: (bookId) =>
@@ -228,6 +379,11 @@ export function createLibraryStorage(options: LibraryStorageOptions = {}): Libra
                 store: 'highlights',
                 failureMessage: 'Unable to save the highlight.',
                 request: (store) => store.put(highlight),
+                change: () =>
+                    outboxEntry('highlight', highlight.id, {
+                        deleted: false,
+                        changedAt: highlight.updatedAt,
+                    }),
             }),
 
         deleteHighlight: (id) =>
@@ -235,6 +391,7 @@ export function createLibraryStorage(options: LibraryStorageOptions = {}): Libra
                 store: 'highlights',
                 failureMessage: 'Unable to delete the highlight.',
                 request: (store) => store.delete(id),
+                change: () => outboxEntry('highlight', id, { deleted: true, changedAt: now() }),
             }),
 
         close: () => database.close(),

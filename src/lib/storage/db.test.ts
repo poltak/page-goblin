@@ -37,7 +37,7 @@ function openRaw(factory: IDBFactory, version?: number): Promise<IDBDatabase> {
 }
 
 describe('createDatabase', () => {
-    it('makes the stores and indexes of version 1', async () => {
+    it('makes the stores and indexes of the current version', async () => {
         const factory = new IDBFactory()
         const database = createDatabase({ indexedDB: factory })
         await countProgress(database)
@@ -52,7 +52,9 @@ describe('createDatabase', () => {
             'covers',
             'files',
             'highlights',
+            'outbox',
             'progress',
+            'syncState',
         ])
 
         const transaction = raw.transaction([...raw.objectStoreNames], 'readonly')
@@ -70,6 +72,42 @@ describe('createDatabase', () => {
         expect([...store('bookmarks').indexNames]).toEqual(['bookId'])
         expect(store('highlights').keyPath).toBe('id')
         expect([...store('highlights').indexNames]).toEqual(['bookId'])
+        expect(store('outbox').keyPath).toBe('id')
+        expect(store('syncState').keyPath).toBeNull()
+        raw.close()
+    })
+
+    it('adds the sync stores to a version 1 database and keeps its records', async () => {
+        const factory = new IDBFactory()
+        const old = await new Promise<IDBDatabase>((resolve, reject) => {
+            const request = factory.open(DATABASE_NAME, 1)
+            request.onupgradeneeded = () => {
+                const db = request.result
+                for (const name of ['books', 'bookmarks', 'highlights']) {
+                    db.createObjectStore(name, { keyPath: 'id' })
+                }
+                db.createObjectStore('files')
+                db.createObjectStore('covers')
+                db.createObjectStore('progress', { keyPath: 'bookId' })
+            }
+            request.onsuccess = () => resolve(request.result)
+            request.onerror = () => reject(request.error)
+        })
+        await new Promise<void>((resolve) => {
+            const transaction = old.transaction('progress', 'readwrite')
+            transaction.objectStore('progress').put({ bookId: 'a' })
+            transaction.oncomplete = () => resolve()
+        })
+        old.close()
+
+        const database = createDatabase({ indexedDB: factory })
+        expect(await countProgress(database)).toBe(1)
+        database.close()
+
+        const raw = await openRaw(factory)
+        expect(raw.version).toBe(DATABASE_VERSION)
+        expect(raw.objectStoreNames.contains('outbox')).toBe(true)
+        expect(raw.objectStoreNames.contains('syncState')).toBe(true)
         raw.close()
     })
 

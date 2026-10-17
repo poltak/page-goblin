@@ -8,6 +8,8 @@
  * - `progress`   key `bookId`. One record for each book.
  * - `bookmarks`  key `id`, index `bookId`.
  * - `highlights` key `id`, index `bookId`.
+ * - `outbox`     key `id`. The changes that the sync did not send yet. See `OutboxEntry`.
+ * - `syncState`  out-of-line keys. The state of the sync, for example its cursor.
  */
 
 import type { HighlightColor, Locator } from '$lib/types'
@@ -45,6 +47,12 @@ export interface BookRecord {
     addedAt: number
     /** Epoch milliseconds, or null when the book was never opened. */
     lastOpenedAt: number | null
+    /**
+     * True when the file of the book is not on this device. The sync made the record from the
+     * server, and it downloads the file when the book opens. A record with no such field has
+     * its file.
+     */
+    remoteOnly?: boolean
 }
 
 export interface ProgressRecord {
@@ -91,6 +99,78 @@ export interface NewBook {
     record: BookRecord
     file: Blob
     cover: Blob | null
+}
+
+/** A kind of record that the sync copies between devices. */
+export type SyncRecordKind = 'book' | 'progress' | 'bookmark' | 'highlight'
+
+/**
+ * One change on this device that the sync did not send yet. The storage writes it in the same
+ * transaction as the change, and only while the sync is on.
+ *
+ * Kind 'file' asks the sync to upload the file and the cover of a book.
+ */
+export interface OutboxEntry {
+    /** `${kind}:${key}`. A later change of the same record replaces the entry. */
+    id: string
+    kind: SyncRecordKind | 'file'
+    /**
+     * The key of the record on all devices. A book has a different `id` on each device, so a
+     * book, its progress and its file use the file hash. A bookmark and a highlight use their
+     * own id.
+     */
+    key: string
+    deleted: boolean
+    /**
+     * The version of the change in epoch milliseconds. The newer change wins on the server.
+     * It is the time of the record itself where the record has one: `updatedAt` of progress
+     * and highlights, `createdAt` of bookmarks.
+     */
+    changedAt: number
+}
+
+/** A book as the sync sends it. The local id and the file state stay on the device. */
+export type SyncBookValue = Omit<BookRecord, 'id' | 'remoteOnly'>
+/** Progress, a bookmark and a highlight name their book by the file hash. */
+export type SyncProgressValue = Omit<ProgressRecord, 'bookId'> & { fileHash: string }
+export type SyncBookmarkValue = Omit<BookmarkRecord, 'bookId'> & { fileHash: string }
+export type SyncHighlightValue = Omit<HighlightRecord, 'bookId'> & { fileHash: string }
+
+export interface SyncValues {
+    book: SyncBookValue
+    progress: SyncProgressValue
+    bookmark: SyncBookmarkValue
+    highlight: SyncHighlightValue
+}
+
+/** A record as the sync sends and receives it. `key` is the key of `OutboxEntry`. */
+export type SyncItem =
+    | {
+          [K in SyncRecordKind]: {
+              kind: K
+              key: string
+              /** The version. See `OutboxEntry.changedAt`. */
+              updatedAt: number
+              deleted: false
+              value: SyncValues[K]
+          }
+      }[SyncRecordKind]
+    | { kind: SyncRecordKind; key: string; updatedAt: number; deleted: true; value: null }
+
+/** The state of the sync on this device, in the `syncState` store. */
+export interface SyncState {
+    /** The id of the account on the server. A different id means that the server started again. */
+    account: string
+    /** The sequence number of the last server change that this device has. */
+    cursor: number
+}
+
+/** Tells the storage when to write the outbox. */
+export interface ChangeTracker {
+    /** True while the sync is on. */
+    isOn(): boolean
+    /** Runs after a transaction that wrote to the outbox is complete. */
+    onChange(): void
 }
 
 /**

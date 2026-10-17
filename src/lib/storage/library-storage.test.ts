@@ -3,7 +3,13 @@ import { forceCloseDatabase, IDBFactory } from 'fake-indexeddb'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createLibraryStorage, type LibraryFileStorage } from './library-storage'
 import { trackFactory, type TrackedFactory } from './testing/tracked-factory'
-import type { BookmarkRecord, BookRecord, HighlightRecord, ProgressRecord } from './types'
+import type {
+    BookmarkRecord,
+    BookRecord,
+    HighlightRecord,
+    OutboxEntry,
+    ProgressRecord,
+} from './types'
 
 function makeBook(id: string, changes: Partial<BookRecord> = {}): BookRecord {
     return {
@@ -444,6 +450,160 @@ describe('createLibraryStorage', () => {
             await storage.deleteHighlight('missing')
 
             expect((await storage.listHighlights('a')).map((light) => light.id)).toEqual(['two'])
+        })
+    })
+
+    describe('outbox', () => {
+        let syncOn: boolean
+        let onChange: ReturnType<typeof vi.fn<() => void>>
+
+        beforeEach(() => {
+            storage.close()
+            syncOn = true
+            onChange = vi.fn<() => void>()
+            storage = createLibraryStorage({
+                indexedDB: tracked.factory,
+                changes: { isOn: () => syncOn, onChange },
+                now: () => 9000,
+            })
+        })
+
+        function readOutbox(): Promise<OutboxEntry[]> {
+            return storage.database.run<OutboxEntry[]>({
+                stores: 'outbox',
+                mode: 'readonly',
+                failureMessage: 'Unable to read.',
+                work: (transaction) => {
+                    const request = transaction.objectStore('outbox').getAll()
+                    return () => request.result as OutboxEntry[]
+                },
+            })
+        }
+
+        function entry(
+            kind: OutboxEntry['kind'],
+            key: string,
+            deleted: boolean,
+            changedAt: number,
+        ): OutboxEntry {
+            return { id: `${kind}:${key}`, kind, key, deleted, changedAt }
+        }
+
+        it('writes nothing to the outbox while the sync is off', async () => {
+            syncOn = false
+            await addBook('a')
+            await storage.saveProgress(makeProgress('a'))
+            await storage.putBookmark(makeBookmark('m'))
+            await storage.deleteBook('a')
+
+            expect(tracked.transactions.some((item) => item.stores.includes('outbox'))).toBe(false)
+            expect(await readOutbox()).toEqual([])
+            expect(onChange).not.toHaveBeenCalled()
+        })
+
+        it('treats a tracker that throws as a sync that is off', async () => {
+            storage.close()
+            storage = createLibraryStorage({
+                indexedDB: tracked.factory,
+                changes: {
+                    isOn: () => {
+                        throw new Error('broken')
+                    },
+                    onChange,
+                },
+            })
+            await addBook('a')
+
+            expect(await storage.getBook('a')).toEqual(makeBook('a'))
+            expect(await readOutbox()).toEqual([])
+        })
+
+        it('asks to send a new book and its file, in the transaction of the book', async () => {
+            await addBook('a', { addedAt: 1500 })
+
+            expect(tracked.transactions.at(-1)).toEqual({
+                stores: ['books', 'files', 'covers', 'outbox'],
+                mode: 'readwrite',
+            })
+            expect(await readOutbox()).toEqual([
+                entry('book', 'hash-a', false, 1500),
+                entry('file', 'hash-a', false, 1500),
+            ])
+            expect(onChange).toHaveBeenCalledTimes(1)
+        })
+
+        it('uses the time of the change for a changed book', async () => {
+            await addBook('a')
+            await storage.updateBook('a', { lastOpenedAt: 5000 })
+            await storage.updateBook('missing', { lastOpenedAt: 5000 })
+
+            expect(await readOutbox()).toContainEqual(entry('book', 'hash-a', false, 9000))
+            expect(await readOutbox()).toHaveLength(2)
+        })
+
+        it('keys the progress by the file hash and versions it by its own time', async () => {
+            await addBook('a')
+            await storage.saveProgress(makeProgress('a', { updatedAt: 2500 }))
+            // A position of a book that is not in the library has no file hash.
+            await storage.saveProgress(makeProgress('missing'))
+
+            expect(tracked.transactions.at(-1)).toEqual({
+                stores: ['progress', 'books', 'outbox'],
+                mode: 'readwrite',
+            })
+            expect(await readOutbox()).toContainEqual(entry('progress', 'hash-a', false, 2500))
+            expect(await readOutbox()).toHaveLength(3)
+        })
+
+        it('replaces the entry of a record with its later change', async () => {
+            await storage.putBookmark(makeBookmark('m', { createdAt: 3100 }))
+            await storage.putHighlight(makeHighlight('h', { updatedAt: 4100 }))
+            expect(await readOutbox()).toEqual([
+                entry('bookmark', 'm', false, 3100),
+                entry('highlight', 'h', false, 4100),
+            ])
+
+            await storage.deleteBookmark('m')
+            await storage.deleteHighlight('h')
+            expect(await readOutbox()).toEqual([
+                entry('bookmark', 'm', true, 9000),
+                entry('highlight', 'h', true, 9000),
+            ])
+            expect(onChange).toHaveBeenCalledTimes(4)
+        })
+
+        it('marks a removed book, its progress and its notes as deleted', async () => {
+            await addBook('a')
+            await addBook('b')
+            await storage.saveProgress(makeProgress('a'))
+            await storage.putBookmark(makeBookmark('m', { bookId: 'a' }))
+            await storage.putHighlight(makeHighlight('h', { bookId: 'a' }))
+            await storage.putHighlight(makeHighlight('other', { bookId: 'b' }))
+
+            await storage.deleteBook('a')
+
+            const outbox = await readOutbox()
+            expect(outbox).toEqual(
+                expect.arrayContaining([
+                    entry('book', 'hash-a', true, 9000),
+                    entry('progress', 'hash-a', true, 9000),
+                    entry('bookmark', 'm', true, 9000),
+                    entry('highlight', 'h', true, 9000),
+                    entry('highlight', 'other', false, 4000),
+                ]),
+            )
+            // A file that the sync did not upload yet must not upload after the delete.
+            expect(outbox.find((item) => item.id === 'file:hash-a')).toBeUndefined()
+            expect(outbox.find((item) => item.id === 'file:hash-b')).toBeDefined()
+        })
+
+        it('gives a book with no file on this device its file', async () => {
+            await addBook('a', { remoteOnly: true })
+            await storage.putFile('a', new Blob(['downloaded']))
+
+            expect(await storage.getBook('a')).toEqual(makeBook('a'))
+            expect(await (await storage.getFile('a'))?.text()).toBe('downloaded')
+            expect(await readOutbox()).toContainEqual(entry('file', 'hash-a', false, 9000))
         })
     })
 
