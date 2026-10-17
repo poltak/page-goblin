@@ -30,6 +30,7 @@ const sync = createSyncHost({
     onChanges(changes) {
         void library.applySyncChanges(changes.books)
         for (const progress of changes.progress) readerHost.offerPosition(progress)
+        for (const bookId of changes.annotations) readerHost.annotationsChanged(bookId)
     },
 })
 const storage = createLibraryStorage({ changes: sync.tracker })

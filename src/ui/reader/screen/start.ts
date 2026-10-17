@@ -137,6 +137,10 @@ export function startReader(options: ReaderMountOptions, deps: ReaderDeps): Star
         })
     }
 
+    function annotationsChanged(): void {
+        openSession?.reloadAnnotations().catch((error: unknown) => console.error(error))
+    }
+
     return {
         ready,
         destroy: () => {
@@ -144,5 +148,6 @@ export function startReader(options: ReaderMountOptions, deps: ReaderDeps): Star
             return (closing ??= close())
         },
         offerPosition,
+        annotationsChanged,
     }
 }

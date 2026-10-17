@@ -52,6 +52,8 @@ const storage: SessionStorage = {
     deleteBookmark: async () => {},
     putHighlight: async () => {},
     deleteHighlight: async () => {},
+    listBookmarks: async () => [],
+    listHighlights: async () => [],
 }
 
 async function checkBook(file: string, report: string[]): Promise<void> {

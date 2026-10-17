@@ -229,6 +229,7 @@ export function createFakeSession(options: FakeSessionOptions = {}) {
         removeHighlight: vi.fn<ReaderSession['removeHighlight']>(async (id) => {
             setHighlights(highlights.filter((highlight) => highlight.id !== id))
         }),
+        reloadAnnotations: vi.fn<ReaderSession['reloadAnnotations']>(async () => {}),
 
         search: vi.fn<ReaderSession['search']>(
             (searchOptions) =>

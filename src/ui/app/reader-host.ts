@@ -58,6 +58,8 @@ export interface ReaderHost {
     settled(): Promise<void>
     /** Gives a reading position from a different device to the reader of that book. */
     offerPosition(progress: ProgressRecord): void
+    /** A sync changed the bookmarks or highlights of a book. */
+    annotationsChanged(bookId: string): void
 }
 
 export function createReaderHost(options: ReaderHostOptions): ReaderHost {
@@ -199,6 +201,9 @@ export function createReaderHost(options: ReaderHostOptions): ReaderHost {
             if (mounted && mounted.bookId === progress.bookId && wanted === progress.bookId) {
                 mounted.reader?.offerPosition?.(progress)
             }
+        },
+        annotationsChanged(bookId) {
+            if (mounted?.bookId === bookId) mounted.reader?.annotationsChanged?.()
         },
     }
 }

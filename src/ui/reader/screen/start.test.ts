@@ -456,3 +456,18 @@ describe('a position from a different device', () => {
         expect(toastTexts()).toEqual([])
     })
 })
+
+describe('annotations from a different device', () => {
+    it('makes the open session read its annotations again', async () => {
+        const { reader, resolve, session } = setup()
+        reader.annotationsChanged()
+        expect(session.reloadAnnotations).not.toHaveBeenCalled()
+
+        await flush()
+        resolve()
+        await flush()
+        reader.annotationsChanged()
+
+        expect(session.reloadAnnotations).toHaveBeenCalledTimes(1)
+    })
+})

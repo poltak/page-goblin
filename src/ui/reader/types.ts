@@ -149,6 +149,11 @@ export interface ReaderSession {
     addHighlight(highlight: NewHighlight): Promise<HighlightRecord>
     updateHighlight(id: string, patch: { color?: HighlightColor; note?: string }): Promise<void>
     removeHighlight(id: string): Promise<void>
+    /**
+     * Reads the bookmarks and highlights from storage again, after a sync changed them. It runs
+     * after the annotation changes that wait, so a later edit starts from the new records.
+     */
+    reloadAnnotations(): Promise<void>
 
     /**
      * Search the text of the whole book, chapter by chapter, with no difference between upper
@@ -197,4 +202,6 @@ export interface MountedReader {
      * not on screen, the reader offers to go there. It does not move by itself.
      */
     offerPosition?(progress: ProgressRecord): void
+    /** A sync changed the bookmarks or the highlights of this book. */
+    annotationsChanged?(): void
 }

@@ -1877,6 +1877,38 @@ describe('highlights', () => {
     })
 })
 
+describe('reloadAnnotations', () => {
+    it('reads the bookmarks and highlights again, after a sync changed them', async () => {
+        const old = makeHighlight('h1', { spineIndex: CHAPTER_2, start: 5, end: 9 })
+        const { session, views, storage } = await open({ highlights: [old] })
+        const changed = { ...old, note: 'From a different device', updatedAt: old.updatedAt + 1 }
+        const added = makeBookmark('b1', { locator: { spineIndex: CHAPTER_2, offset: 80 } })
+        await storage.putHighlight(changed)
+        await storage.putBookmark(added)
+        vi.mocked(views.current.setHighlights).mockClear()
+
+        await session.reloadAnnotations()
+
+        expect(session.highlights).toEqual([changed])
+        expect(session.bookmarks).toEqual([added])
+        expect(views.current.setHighlights).toHaveBeenCalledTimes(1)
+    })
+
+    it('runs after an annotation change that waits, so the change does not use an old record', async () => {
+        const old = makeHighlight('h1', { spineIndex: CHAPTER_2, start: 5, end: 9 })
+        const { session, storage } = await open({ highlights: [old] })
+        await storage.putHighlight({ ...old, note: 'Remote note', updatedAt: old.updatedAt + 1 })
+
+        const reload = session.reloadAnnotations()
+        const update = session.updateHighlight('h1', { color: 'blue' })
+        await Promise.all([reload, update])
+
+        const [stored] = await storage.listHighlights(BOOK_ID)
+        expect(stored.note).toBe('Remote note')
+        expect(stored.color).toBe('blue')
+    })
+})
+
 describe('search', () => {
     interface SearchRun {
         results: SearchResult[]

@@ -208,6 +208,7 @@ export function makeFakeSession(changes: Partial<FakeSessionState> = {}): FakeSe
         }),
         updateHighlight: vi.fn(async () => {}),
         removeHighlight: vi.fn(async () => {}),
+        reloadAnnotations: vi.fn(async () => {}),
         search: vi.fn(async () => {}),
         clearSearch: vi.fn(),
         loadNote: vi.fn(async () => null),

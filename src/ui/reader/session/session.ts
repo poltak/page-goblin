@@ -64,7 +64,13 @@ export interface SessionTimers {
 
 export type SessionStorage = Pick<
     LibraryStorage,
-    'saveProgress' | 'putBookmark' | 'deleteBookmark' | 'putHighlight' | 'deleteHighlight'
+    | 'saveProgress'
+    | 'putBookmark'
+    | 'deleteBookmark'
+    | 'putHighlight'
+    | 'deleteHighlight'
+    | 'listBookmarks'
+    | 'listHighlights'
 >
 
 export interface ReaderSessionDeps {
@@ -782,6 +788,19 @@ export function createReaderSession(deps: ReaderSessionDeps): ReaderSession {
         })
     }
 
+    function reloadAnnotations(): Promise<void> {
+        if (destroyed) return Promise.resolve()
+        return queueAnnotation(async () => {
+            const [nextBookmarks, nextHighlights] = await Promise.all([
+                storage.listBookmarks(record.id),
+                storage.listHighlights(record.id),
+            ])
+            if (destroyed) return
+            setBookmarks(nextBookmarks)
+            setHighlights(nextHighlights)
+        })
+    }
+
     // Search
 
     function setSearchRanges(ranges: readonly TextRange[]): void {
@@ -949,6 +968,7 @@ export function createReaderSession(deps: ReaderSessionDeps): ReaderSession {
         addHighlight,
         updateHighlight,
         removeHighlight,
+        reloadAnnotations,
 
         search,
         clearSearch,
