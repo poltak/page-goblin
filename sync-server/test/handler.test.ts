@@ -2,6 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { handleRequest, type Env } from '../src/handler'
+import { MAX_PUSH_CHANGES } from '../src/protocol'
 import type { Change, PullResponse, PushResponse, StatusResponse } from '../src/protocol'
 import { createMemoryBucket } from './memory-bucket'
 import { createSqliteDatabase } from './sqlite-database'
@@ -263,6 +264,23 @@ describe('handleRequest', () => {
             expect(result.rejected).toEqual([{ ...change('one', 10, { data: '"first"' }), seq: 1 }])
         })
 
+        it('stays inside the 50 D1 queries of a free plan request, also when all changes lose', async () => {
+            const newer = Array.from({ length: MAX_PUSH_CHANGES }, (_, index) =>
+                change(`c${index}`, 20),
+            )
+            await pushChanges(newer)
+            const older = newer.map((item) => ({ ...item, updatedAt: 10 }))
+
+            db.queries = 0
+            const result = await pushChanges(older)
+
+            expect(result.rejected).toHaveLength(MAX_PUSH_CHANGES)
+            expect(result.rejected.map((item) => item.key).sort()).toEqual(
+                newer.map((item) => item.key).sort(),
+            )
+            expect(db.queries).toBeLessThanOrEqual(45)
+        })
+
         it('gives the changes in pages', async () => {
             await pushChanges([change('one', 10), change('two', 20), change('three', 30)])
 
@@ -304,7 +322,9 @@ describe('handleRequest', () => {
         })
 
         it('refuses too many changes in one push', async () => {
-            const changes = Array.from({ length: 201 }, (_, index) => change(`c${index}`, 1))
+            const changes = Array.from({ length: MAX_PUSH_CHANGES + 1 }, (_, index) =>
+                change(`c${index}`, 1),
+            )
             const response = await call('/v1/changes', { method: 'POST', body: { changes } })
             expect(response.status).toBe(413)
         })

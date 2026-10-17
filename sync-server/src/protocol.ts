@@ -87,8 +87,13 @@ export interface ErrorResponse {
     code: ErrorCode
 }
 
-/** The largest number of changes in one push. */
-export const MAX_PUSH_CHANGES = 200
+/**
+ * The largest number of changes in one push. On the free plan, D1 allows 50 queries in one
+ * request, and a push needs one query for each change and some more.
+ */
+export const MAX_PUSH_CHANGES = 40
+/** The number of changes in one pull when the request gives no limit. */
+export const DEFAULT_PULL_CHANGES = 100
 /** The largest number of changes in one pull. */
 export const MAX_PULL_CHANGES = 500
 /** The largest `data` of one change, in UTF-16 code units. */

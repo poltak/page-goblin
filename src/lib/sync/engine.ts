@@ -16,7 +16,7 @@ import { SyncError } from './types'
 import type { StoredChange, SyncBackend, SyncStatus } from './types'
 
 /** A run stops after this many pushes, so a device that changes all the time cannot hold it. */
-const MAX_PUSH_ROUNDS = 50
+const MAX_PUSH_ROUNDS = 200
 /** The largest number of files that one run uploads. The next run uploads more. */
 const MAX_UPLOADS = 20
 /** The largest number of covers that one run downloads. */

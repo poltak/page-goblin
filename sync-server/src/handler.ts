@@ -6,6 +6,7 @@
  */
 
 import {
+    DEFAULT_PULL_CHANGES,
     FILE_HASH,
     MAX_COVER_BYTES,
     MAX_FILE_BYTES,
@@ -69,7 +70,6 @@ export interface Env {
 /** A short setup code is easy to guess. The server has no limit on wrong tries. */
 export const MIN_SETUP_CODE_LENGTH = 16
 
-const DEFAULT_PULL = 500
 const MAX_PUSH_BYTES = 20 * 1024 * 1024
 const COVER_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif'])
 
@@ -88,7 +88,8 @@ const SCHEMA = [
     'CREATE INDEX IF NOT EXISTS records_seq ON records (seq)',
 ]
 
-// The new row gets the next sequence number. A row that loses keeps its old values.
+// The new row gets the next sequence number. A row that loses keeps its old values, and then
+// RETURNING gives no row.
 const UPSERT = `INSERT INTO records (kind, key, updated_at, deleted, format, data, seq)
 VALUES (?1, ?2, ?3, ?4, ?5, ?6, (SELECT COALESCE(MAX(seq), 0) + 1 FROM records))
 ON CONFLICT (kind, key) DO UPDATE SET
@@ -98,13 +99,23 @@ ON CONFLICT (kind, key) DO UPDATE SET
     data = excluded.data,
     seq = excluded.seq
 WHERE excluded.updated_at > records.updated_at
-    OR (excluded.updated_at = records.updated_at AND excluded.deleted > records.deleted)`
+    OR (excluded.updated_at = records.updated_at AND excluded.deleted > records.deleted)
+RETURNING kind, key`
 
-const SELECT_ONE =
-    'SELECT kind, key, updated_at, deleted, format, data, seq FROM records WHERE kind = ?1 AND key = ?2'
+const COLUMNS = 'kind, key, updated_at, deleted, format, data, seq'
 
-const SELECT_AFTER =
-    'SELECT kind, key, updated_at, deleted, format, data, seq FROM records WHERE seq > ?1 ORDER BY seq LIMIT ?2'
+/** The rows of these records, in one query. Two bound values for each record. */
+function selectRecords(db: Database, keys: readonly { kind: string; key: string }[]): Statement {
+    const where = keys.map((_, index) => `(kind = ?${index * 2 + 1} AND key = ?${index * 2 + 2})`)
+    return db
+        .prepare(`SELECT ${COLUMNS} FROM records WHERE ${where.join(' OR ')}`)
+        .bind(...keys.flatMap(({ kind, key }) => [kind, key]))
+}
+
+/** D1 allows 100 bound values in one query. */
+const KEYS_PER_SELECT = 50
+
+const SELECT_AFTER = `SELECT ${COLUMNS} FROM records WHERE seq > ?1 ORDER BY seq LIMIT ?2`
 
 interface RecordRow {
     kind: string
@@ -291,7 +302,7 @@ async function accountOf(db: Database): Promise<string> {
 
 async function pull(url: URL, db: Database): Promise<Response> {
     const since = Number(url.searchParams.get('since') ?? '0')
-    const limit = Number(url.searchParams.get('limit') ?? String(DEFAULT_PULL))
+    const limit = Number(url.searchParams.get('limit') ?? String(DEFAULT_PULL_CHANGES))
     if (!Number.isSafeInteger(since) || since < 0) {
         throw new HttpError(400, 'bad-request', 'The value of since is not valid.')
     }
@@ -329,10 +340,9 @@ async function push(request: Request, db: Database): Promise<Response> {
     }
     if (changes.length === 0) return json({ rejected: [] } satisfies PushResponse)
 
-    // Each write is followed by a read of the row, in the same transaction.
-    const statements: Statement[] = []
-    for (const change of changes) {
-        statements.push(
+    // One query for each change. A change that loses returns no row.
+    const results = await db.batch<{ kind: string; key: string }>(
+        changes.map((change) =>
             db
                 .prepare(UPSERT)
                 .bind(
@@ -343,22 +353,19 @@ async function push(request: Request, db: Database): Promise<Response> {
                     change.format,
                     change.data,
                 ),
-            db.prepare(SELECT_ONE).bind(change.kind, change.key),
-        )
-    }
-    const results = await db.batch<RecordRow>(statements)
+        ),
+    )
+    const lost = changes.filter((_, index) => (results[index]?.results.length ?? 0) === 0)
 
+    // The device gets the versions that won, so it does not keep a version that lost.
     const rejected: StoredChange[] = []
-    changes.forEach((change, index) => {
-        const row = results[index * 2 + 1]?.results[0]
-        if (!row) return
-        const stored = toChange(row)
-        const kept =
-            stored.updatedAt === change.updatedAt &&
-            stored.deleted === change.deleted &&
-            stored.data === change.data
-        if (!kept) rejected.push(stored)
-    })
+    for (let start = 0; start < lost.length; start += KEYS_PER_SELECT) {
+        const { results: rows } = await selectRecords(
+            db,
+            lost.slice(start, start + KEYS_PER_SELECT),
+        ).all<RecordRow>()
+        rejected.push(...rows.map(toChange))
+    }
     const response: PushResponse = { rejected }
     return json(response)
 }

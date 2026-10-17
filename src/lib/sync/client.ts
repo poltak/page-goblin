@@ -3,7 +3,7 @@
  */
 
 import { isRecord } from '$lib/annotations/backup'
-import { MAX_PULL_CHANGES, parseStoredChange } from '../../../sync-server/src/protocol'
+import { DEFAULT_PULL_CHANGES, parseStoredChange } from '../../../sync-server/src/protocol'
 import type { ErrorCode, SetupRequest } from '../../../sync-server/src/protocol'
 import { SyncError } from './types'
 import type {
@@ -167,7 +167,7 @@ export function createSyncClient(options: SyncClientOptions): SyncBackend {
             return { account: parseAccount(await readJson(response)) }
         },
 
-        async pull({ since, limit = MAX_PULL_CHANGES }) {
+        async pull({ since, limit = DEFAULT_PULL_CHANGES }) {
             const query = new URLSearchParams({ since: String(since), limit: String(limit) })
             const response = await requireFound(await request(`/v1/changes?${query}`))
             const body = await readJson(response)
