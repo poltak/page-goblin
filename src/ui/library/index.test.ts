@@ -783,6 +783,7 @@ describe('sync', () => {
 
     let sync: {
         isOn: ReturnType<typeof vi.fn<() => boolean>>
+        syncNow: ReturnType<typeof vi.fn<() => Promise<void>>>
         removeDownload: ReturnType<typeof vi.fn<(bookId: string) => Promise<boolean>>>
         openDialog: ReturnType<typeof vi.fn<(opener: Element | null) => void>>
     }
@@ -790,6 +791,7 @@ describe('sync', () => {
     beforeEach(() => {
         sync = {
             isOn: vi.fn(() => true),
+            syncNow: vi.fn(async () => {}),
             removeDownload: vi.fn(async (bookId: string) => {
                 await storage.updateBook(bookId, { remoteOnly: true })
                 return true
@@ -829,6 +831,17 @@ describe('sync', () => {
         expect(cloud('a').hidden).toBe(false)
         expect(card('a').querySelector<HTMLElement>('.book-card-remote')!.hidden).toBe(false)
         expect(cloud('b').hidden).toBe(true)
+    })
+
+    it('sends the delete of a book at once and tells that all devices lose the book', async () => {
+        await addBooks(makeBook('a'), makeBook('b'))
+        await startSyncedScreen().load()
+
+        click(openRemove('a').querySelector('[value="remove"]')!)
+
+        await vi.waitFor(() => expect(cardIds()).toEqual(['b']))
+        expect(sync.syncNow).toHaveBeenCalledTimes(1)
+        expect(toastTexts()).toEqual(['"Title a" was removed from all your devices.'])
     })
 
     it('removes a book from all devices, or only its download', async () => {

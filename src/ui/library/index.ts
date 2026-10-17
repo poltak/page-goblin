@@ -41,6 +41,8 @@ const COVER_MARGIN = '400px 0px'
 /** The parts of the sync that the library uses. */
 export interface LibrarySync {
     isOn(): boolean
+    /** Rejects with a SyncError when the sync fails. */
+    syncNow(): Promise<void>
     /** Resolves false when the server does not have the file yet. */
     removeDownload(bookId: string): Promise<boolean>
     openDialog(opener: Element | null): void
@@ -426,6 +428,7 @@ export function createLibraryScreen(options: LibraryScreenOptions): LibraryScree
     // ---------- Remove ----------
 
     async function removeFromLibrary(book: BookRecord): Promise<void> {
+        const synced = options.sync?.isOn() === true
         try {
             await storage.deleteBook(book.id)
         } catch (error) {
@@ -433,6 +436,9 @@ export function createLibraryScreen(options: LibraryScreenOptions): LibraryScree
             showToast({ message: 'The book was not removed.', tone: 'error' })
             return
         }
+        // The delete must not wait for the delay after a change: the user can close the app
+        // at once. The sync status shows an error.
+        if (synced) options.sync?.syncNow().catch(() => {})
         const card = entries.get(book.id)?.card
         const hadFocus = card?.contains(document.activeElement) === true
         // The next card that the search does not hide, or else the one before.
@@ -449,7 +455,12 @@ export function createLibraryScreen(options: LibraryScreenOptions): LibraryScree
                 : qs('[data-action="add-books"]', root)
             target.focus()
         }
-        showToast({ message: `"${shorten(book.title, 60)}" was removed.` })
+        const title = shorten(book.title, 60)
+        showToast({
+            message: synced
+                ? `"${title}" was removed from all your devices.`
+                : `"${title}" was removed.`,
+        })
     }
 
     async function removeDownload(book: BookRecord): Promise<void> {

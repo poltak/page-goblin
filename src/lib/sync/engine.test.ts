@@ -291,6 +291,24 @@ describe('createSyncEngine', () => {
         expect(await phone.storage.listHighlights('b')).toEqual([])
     })
 
+    it('removes a book on all devices when a device that has no file removes it', async () => {
+        const phone = createDevice()
+        const laptop = createDevice()
+        await addBook(phone, 'a', 'epub bytes of a')
+        await phone.engine.sync()
+        await laptop.engine.sync()
+        const [copy] = await laptop.storage.listBooks()
+        expect(copy.remoteOnly).toBe(true)
+
+        laptop.clock.now = 20_000
+        await laptop.storage.deleteBook(copy.id)
+        await laptop.engine.sync()
+        await phone.engine.sync()
+
+        expect(await phone.storage.listBooks()).toEqual([])
+        expect(await laptop.storage.listBooks()).toEqual([])
+    })
+
     it('uploads each file one time', async () => {
         const phone = createDevice()
         const book = await addBook(phone, 'a', 'epub bytes of a')
