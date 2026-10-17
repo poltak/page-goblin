@@ -54,6 +54,8 @@ Quickstart for coding sessions in `page-goblin`.
 - The sync key of a book, its progress and its file is the file hash. The local book id is different on each device.
 - People run their own copy of `sync-server`. A change of `sync-server/src/protocol.ts` must keep old servers and old apps working.
 - Server data is not trusted. `src/lib/sync/records.ts` checks each record before it goes into storage.
+- A new record format (for example encryption) needs a new `DATA_FORMAT` and one full pull from cursor 0, because older versions moved their cursor past records that they could not read.
+- `lastOpenedAt` does not sync. An open on one device must not win over a delete on a different device.
 
 ## Tests
 

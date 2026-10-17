@@ -18,7 +18,12 @@ import {
 import type { SpineStats, SyncBookValue, SyncItem } from '$lib/storage/types'
 import type { Change, StoredChange } from './types'
 
-/** The format of `Change.data` that this version writes: the record as JSON text. */
+/**
+ * The format of `Change.data` that this version writes: the record as JSON text.
+ *
+ * An older version drops a change with a format that it cannot read, and its cursor moves past
+ * that change. So the version that adds a format must pull again from cursor 0 one time.
+ */
 export const DATA_FORMAT = 1
 
 export function toChange(item: SyncItem): Change {

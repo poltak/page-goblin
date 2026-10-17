@@ -183,7 +183,10 @@ export interface LibraryStorage {
     findBookByHash(fileHash: string): Promise<BookRecord | undefined>
     /** Writes the record, the file and the cover in one transaction. */
     addBook(book: NewBook): Promise<void>
-    /** Merges `patch` into the record. Does nothing when the book is not there. */
+    /**
+     * Merges `patch` into the record. Does nothing when the book is not there. A change of
+     * `lastOpenedAt` only does not go to the sync.
+     */
     updateBook(id: string, patch: Partial<Omit<BookRecord, 'id'>>): Promise<void>
     /** Removes the book with its file, cover, progress, bookmarks and highlights in one transaction. */
     deleteBook(id: string): Promise<void>

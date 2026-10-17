@@ -151,7 +151,7 @@ describe('createSyncStore', () => {
             await sync.seedOutbox()
 
             expect(await readOutbox()).toEqual([
-                { id: 'book:hash-a', kind: 'book', key: 'hash-a', deleted: false, changedAt: 1500 },
+                { id: 'book:hash-a', kind: 'book', key: 'hash-a', deleted: false, changedAt: 1000 },
                 { id: 'book:hash-b', kind: 'book', key: 'hash-b', deleted: false, changedAt: 1000 },
                 { id: 'bookmark:m', kind: 'bookmark', key: 'm', deleted: false, changedAt: 3000 },
                 { id: 'file:hash-a', kind: 'file', key: 'hash-a', deleted: false, changedAt: 1000 },
@@ -169,7 +169,7 @@ describe('createSyncStore', () => {
         it('keeps the entries that are there', async () => {
             await addBook('a')
             syncOn = true
-            await storage.updateBook('a', { lastOpenedAt: 1200 })
+            await storage.updateBook('a', { title: 'A new title' })
 
             await sync.seedOutbox()
 
@@ -220,15 +220,40 @@ describe('createSyncStore', () => {
             expect(batch.stale).toEqual([])
         })
 
-        it('takes only the first entries', async () => {
+        it('takes only the first records and the first files', async () => {
             syncOn = true
             await addBook('a')
+            await addBook('b', { addedAt: 900 })
             await storage.putHighlight(makeHighlight('h', 'a'))
 
             const batch = await sync.readOutbox(1)
 
             expect(batch.changes.map(({ entry }) => entry.id)).toEqual(['book:hash-a'])
-            expect(batch.files).toEqual([])
+            // The file that waited longest comes first.
+            expect(batch.files.map(({ entry }) => entry.id)).toEqual(['file:hash-b'])
+        })
+
+        it('gives the records even when many files wait', async () => {
+            syncOn = true
+            for (const id of ['a', 'b', 'c']) await addBook(id)
+            await sync.removeOutbox((await readOutbox()).filter((entry) => entry.kind === 'book'))
+            await storage.putHighlight(makeHighlight('h', 'a'))
+
+            const batch = await sync.readOutbox(2)
+
+            expect(batch.changes.map(({ entry }) => entry.id)).toEqual(['highlight:h'])
+            expect(batch.files).toHaveLength(2)
+        })
+
+        it('moves a file that did not upload to the end', async () => {
+            syncOn = true
+            await addBook('a', { addedAt: 100 })
+            await addBook('b', { addedAt: 200 })
+            const [first] = (await sync.readOutbox(1)).files
+
+            await sync.postponeUpload(first.entry, 5000)
+
+            expect((await sync.readOutbox(1)).files[0].entry.id).toBe('file:hash-b')
         })
 
         it('sends a delete with no value and reports entries of lost records', async () => {
@@ -296,8 +321,8 @@ describe('createSyncStore', () => {
             expect(await readOutbox()).toEqual([])
         })
 
-        it('changes a book and keeps its local id and its file', async () => {
-            await addBook('a')
+        it('changes a book and keeps its local id, its file and its last open', async () => {
+            await addBook('a', { lastOpenedAt: 3000 })
 
             const result = await sync.applyRemote({
                 items: [
@@ -306,12 +331,14 @@ describe('createSyncStore', () => {
                         key: 'hash-a',
                         updatedAt: 1000,
                         deleted: false,
-                        value: bookValue('a', { lastOpenedAt: 5000 }),
+                        value: bookValue('a', { title: 'A new title', lastOpenedAt: 5000 }),
                     },
                 ],
             })
 
-            expect(await storage.getBook('a')).toEqual(makeBook('a', { lastOpenedAt: 5000 }))
+            expect(await storage.getBook('a')).toEqual(
+                makeBook('a', { title: 'A new title', lastOpenedAt: 3000 }),
+            )
             expect(await (await storage.getFile('a'))?.text()).toBe('file of a')
             expect(result.books).toEqual(['a'])
         })
@@ -499,19 +526,21 @@ describe('createSyncStore', () => {
     })
 
     describe('reset', () => {
-        it('removes the outbox, the state and the books with no file here', async () => {
+        it('removes the state and the books with no file here, and keeps the outbox', async () => {
             syncOn = true
             await addBook('a')
             await addBook('b', { remoteOnly: true })
             await storage.saveProgress(makeProgress('b'))
+            await storage.deleteBookmark('m')
             await sync.writeState({ account: 'acc', cursor: 3 })
 
             expect(await sync.reset()).toEqual(['b'])
 
             expect((await storage.listBooks()).map((book) => book.id)).toEqual(['a'])
             expect(await storage.getProgress('b')).toBeUndefined()
-            expect(await readOutbox()).toEqual([])
             expect(await sync.readState()).toBeUndefined()
+            // A delete that the server did not get goes when the sync is on again.
+            expect((await readOutbox()).map((entry) => entry.id)).toContain('bookmark:m')
         })
     })
 })

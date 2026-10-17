@@ -71,7 +71,14 @@ export interface Env {
 export const MIN_SETUP_CODE_LENGTH = 16
 
 const MAX_PUSH_BYTES = 20 * 1024 * 1024
-const COVER_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif'])
+const COVER_TYPES = new Set([
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+    'image/gif',
+    'image/avif',
+    'image/bmp',
+])
 
 const SCHEMA = [
     'CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)',
@@ -390,7 +397,7 @@ async function blob(
             throw new HttpError(
                 400,
                 'bad-request',
-                'A cover must be a JPEG, PNG, WebP, GIF or AVIF image.',
+                'A cover must be a JPEG, PNG, WebP, GIF, AVIF or BMP image.',
             )
         }
         if (!request.body) throw new HttpError(400, 'bad-request', 'The request has no body.')

@@ -8,7 +8,7 @@
 
 import { sha256Hex } from '$lib/storage/crypto'
 import type { LibraryFileStorage } from '$lib/storage/library-storage'
-import type { ApplyResult, OutboxBatch, SyncStore } from '$lib/storage/sync-store'
+import type { ApplyResult, OutboxBatch, OutboxFile, SyncStore } from '$lib/storage/sync-store'
 import type { BookRecord, SyncItem } from '$lib/storage/types'
 import { MAX_PUSH_CHANGES, parseChange } from '../../../sync-server/src/protocol'
 import { fromChange, toChange } from './records'
@@ -21,11 +21,14 @@ const MAX_PUSH_ROUNDS = 200
 const MAX_UPLOADS = 20
 /** The largest number of covers that one run downloads. */
 const MAX_COVERS = 50
-const ALL_ENTRIES = 1_000_000
+/** A cover that the server did not have is not asked for again before this time. */
+export const COVER_RETRY_MS = 60 * 60_000
+/** Errors that stop the run. With other errors, a file or a cover waits for the next run. */
+const STOP_CODES = new Set(['offline', 'unauthorized', 'not-set-up'])
 
 export interface SyncEngineOptions {
     store: SyncStore
-    storage: Pick<LibraryFileStorage, 'getFile' | 'getCover'>
+    storage: Pick<LibraryFileStorage, 'getBook' | 'getFile' | 'getCover'>
     backend: SyncBackend
     /** Gets what a run changed in the library of this device. */
     onChanges?(changes: ApplyResult): void
@@ -44,6 +47,11 @@ export interface SyncEngine {
     pushNow(): Promise<void>
     /** Downloads the file of a book, checks its hash and stores it. */
     downloadFile(book: Pick<BookRecord, 'id' | 'fileHash'>): Promise<void>
+    /**
+     * Removes the file of a book from this device. Resolves false, and keeps the file, when the
+     * server does not have the file. Rejects when the server does not answer.
+     */
+    removeDownload(bookId: string): Promise<boolean>
 }
 
 function emptyChanges(): ApplyResult {
@@ -60,6 +68,10 @@ function merge(target: ApplyResult, more: ApplyResult): void {
         if (!target.annotations.includes(id)) target.annotations.push(id)
     }
     target.progress.push(...more.progress)
+}
+
+function stopsTheRun(error: unknown): boolean {
+    return error instanceof SyncError && STOP_CODES.has(error.code)
 }
 
 function toSyncError(error: unknown): SyncError {
@@ -82,6 +94,8 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
     let status: SyncStatus = { phase: 'idle', syncedAt: null, error: null }
     let running: Promise<void> | null = null
     let again = false
+    /** Book ids, with the time when the server did not have their cover. */
+    const coverMisses = new Map<string, number>()
 
     function setStatus(next: Partial<SyncStatus>): void {
         status = { ...status, ...next }
@@ -150,6 +164,10 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
                 again = true
                 continue
             }
+            // A server that gives more pages must also move the cursor, or this loop has no end.
+            if (page.more && page.cursor <= cursor) {
+                throw new SyncError('bad-response', 'The answer of the sync server is not valid.')
+            }
             account = page.account
             changes.push(...page.changes)
             cursor = page.cursor
@@ -158,42 +176,63 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
         return store.applyRemote({ items: itemsOf(changes), state: { account, cursor } })
     }
 
+    async function uploadFile({ entry, bookId, hasCover }: OutboxFile): Promise<void> {
+        const hash = entry.key
+        if (!(await backend.hasBlob({ folder: 'files', hash }))) {
+            const file = await storage.getFile(bookId)
+            // The book left the library, or its file is not on this device.
+            if (!file) {
+                await store.removeOutbox([entry])
+                return
+            }
+            await backend.putBlob({ folder: 'files', hash }, file)
+        }
+        if (hasCover && !(await backend.hasBlob({ folder: 'covers', hash }))) {
+            const cover = await storage.getCover(bookId)
+            if (cover) await backend.putBlob({ folder: 'covers', hash }, cover)
+        }
+        await store.removeOutbox([entry])
+    }
+
+    /** One file that fails does not stop the other files. */
     async function uploadFiles(): Promise<void> {
-        const { files } = await store.readOutbox(ALL_ENTRIES)
-        for (const { entry, bookId, hasCover } of files.slice(0, MAX_UPLOADS)) {
-            const hash = entry.key
-            if (!(await backend.hasBlob({ folder: 'files', hash }))) {
-                const file = await storage.getFile(bookId)
-                // The book left the library, or its file is not on this device.
-                if (!file) {
-                    await store.removeOutbox([entry])
-                    continue
-                }
-                try {
-                    await backend.putBlob({ folder: 'files', hash }, file)
-                } catch (error) {
-                    if (!(error instanceof SyncError && error.code === 'too-large')) throw error
-                    // The file stays on this device only. The other files still upload.
-                    console.warn('The sync server refused a file that is too large.', bookId)
-                    await store.removeOutbox([entry])
-                    continue
+        const { files } = await store.readOutbox(MAX_UPLOADS)
+        for (const file of files) {
+            try {
+                await uploadFile(file)
+            } catch (error) {
+                if (stopsTheRun(error)) throw error
+                if (error instanceof SyncError && error.code === 'too-large') {
+                    // The file stays on this device only.
+                    console.warn('The sync server refused a file that is too large.', file.bookId)
+                    await store.removeOutbox([file.entry])
+                } else {
+                    console.warn('A book file did not upload. The next sync tries again.', error)
+                    await store.postponeUpload(file.entry, now())
                 }
             }
-            if (hasCover && !(await backend.hasBlob({ folder: 'covers', hash }))) {
-                const cover = await storage.getCover(bookId)
-                if (cover) await backend.putBlob({ folder: 'covers', hash }, cover)
-            }
-            await store.removeOutbox([entry])
         }
     }
 
     async function downloadCovers(): Promise<ApplyResult> {
         const changed = emptyChanges()
-        const books = await store.booksWithoutCover()
+        const time = now()
+        const books = (await store.booksWithoutCover()).filter(
+            (book) => time - (coverMisses.get(book.id) ?? -Infinity) >= COVER_RETRY_MS,
+        )
         for (const book of books.slice(0, MAX_COVERS)) {
-            const cover = await backend.getBlob({ folder: 'covers', hash: book.fileHash })
+            let cover: Blob | null
+            try {
+                cover = await backend.getBlob({ folder: 'covers', hash: book.fileHash })
+            } catch (error) {
+                if (stopsTheRun(error)) throw error
+                cover = null
+            }
             // The device that has the book did not upload its cover yet.
-            if (!cover) continue
+            if (!cover) {
+                coverMisses.set(book.id, time)
+                continue
+            }
             await store.storeCover(book.id, cover)
             changed.books.push(book.id)
         }
@@ -257,6 +296,15 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
         await store.storeFile(book.id, new Blob([bytes], { type: 'application/epub+zip' }))
     }
 
+    async function removeDownload(bookId: string): Promise<boolean> {
+        const book = await storage.getBook(bookId)
+        if (!book || book.remoteOnly) return false
+        // The outbox can be empty for a file that the server never got, for example a file
+        // that was too large. The file must not leave its last place.
+        if (!(await backend.hasBlob({ folder: 'files', hash: book.fileHash }))) return false
+        return store.removeDownload(bookId)
+    }
+
     return {
         get status() {
             return status
@@ -264,5 +312,6 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
         sync,
         pushNow,
         downloadFile,
+        removeDownload,
     }
 }

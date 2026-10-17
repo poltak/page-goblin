@@ -20,7 +20,15 @@ import type {
 /** A browser sends a keepalive request only when its body is smaller than 64 KiB. */
 const KEEPALIVE_LIMIT = 60_000
 
-const RASTER_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif'])
+// The same types that the storage keeps as a cover. See src/lib/storage/cover.ts.
+const RASTER_TYPES = new Set([
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+    'image/gif',
+    'image/avif',
+    'image/bmp',
+])
 
 type Fetch = (input: string, init?: RequestInit) => Promise<Response>
 

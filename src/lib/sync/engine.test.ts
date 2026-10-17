@@ -376,6 +376,89 @@ describe('createSyncEngine', () => {
         expect(warn).toHaveBeenCalled()
     })
 
+    it('removes a download only when the server has the file', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        const phone = createDevice({
+            fetch: (input, init) =>
+                init?.method === 'PUT' && input.includes(hashOf('big book'))
+                    ? Promise.resolve(new Response('<html>413</html>', { status: 413 }))
+                    : serverFetch(input, init),
+        })
+        await addBook(phone, 'big', 'big book')
+        await addBook(phone, 'small', 'small book')
+        await phone.engine.sync()
+
+        // The outbox has no upload for the large file, but the server does not have it.
+        expect(await phone.engine.removeDownload('big')).toBe(false)
+        expect(await phone.storage.getFile('big')).toBeDefined()
+        expect(await phone.engine.removeDownload('small')).toBe(true)
+        expect(await phone.storage.getFile('small')).toBeUndefined()
+        expect((await phone.storage.getBook('small'))?.remoteOnly).toBe(true)
+        expect(warn).toHaveBeenCalled()
+    })
+
+    it('uploads the other files when one fails, and tries the failed one again later', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        let failing = true
+        const phone = createDevice({
+            fetch: (input, init) =>
+                failing && init?.method === 'PUT' && input.includes(hashOf('bad book'))
+                    ? Promise.resolve(new Response('{}', { status: 500 }))
+                    : serverFetch(input, init),
+        })
+        await addBook(phone, 'bad', 'bad book')
+        await addBook(phone, 'good', 'good book')
+
+        await phone.engine.sync()
+        expect(bucket.keys()).toContain(`files/${hashOf('good book')}`)
+        expect(bucket.keys()).not.toContain(`files/${hashOf('bad book')}`)
+        expect(phone.engine.status.error).toBeNull()
+        expect(warn).toHaveBeenCalled()
+
+        failing = false
+        await phone.engine.sync()
+        expect(bucket.keys()).toContain(`files/${hashOf('bad book')}`)
+    })
+
+    it('does not ask again within an hour for a cover that the server did not have', async () => {
+        const phone = createDevice({
+            fetch: (input, init) =>
+                init?.method === 'PUT' && input.includes('/v1/covers/')
+                    ? Promise.resolve(new Response('{}', { status: 500 }))
+                    : serverFetch(input, init),
+        })
+        vi.spyOn(console, 'warn').mockImplementation(() => {})
+        await addBook(phone, 'a', 'epub bytes of a')
+        await phone.engine.sync()
+        const fetchSpy = vi.fn(serverFetch)
+        const laptop = createDevice({ fetch: fetchSpy })
+        const coverGets = () =>
+            fetchSpy.mock.calls.filter(
+                ([url, init]) => url.includes('/v1/covers/') && (init?.method ?? 'GET') === 'GET',
+            ).length
+
+        await laptop.engine.sync()
+        await laptop.engine.sync()
+        expect(coverGets()).toBe(1)
+
+        laptop.clock.now += 60 * 60_000
+        await laptop.engine.sync()
+        expect(coverGets()).toBe(2)
+    })
+
+    it('stops a pull that gives more pages with no new cursor', async () => {
+        const device = createDevice({
+            fetch: (input, init) =>
+                input.includes('/v1/changes?')
+                    ? Promise.resolve(
+                          Response.json({ account: 'acc', changes: [], cursor: 0, more: true }),
+                      )
+                    : serverFetch(input, init),
+        })
+
+        await expect(device.engine.sync()).rejects.toMatchObject({ code: 'bad-response' })
+    })
+
     it('runs one more time for a call during a run', async () => {
         const phone = createDevice()
         await addBook(phone, 'a', 'epub bytes of a')

@@ -70,8 +70,13 @@ export interface SyncStore {
     writeState(state: SyncState): Promise<void>
     /** Puts an entry in the outbox for each record of the library that has none. */
     seedOutbox(): Promise<void>
-    /** The first `limit` entries of the outbox, books first, with the values of their records. */
+    /**
+     * The first `limit` record entries of the outbox, books first, with the values of their
+     * records. Also the first `limit` file entries, the oldest first.
+     */
     readOutbox(limit: number): Promise<OutboxBatch>
+    /** Moves a file entry to the end of the uploads, after an upload that failed. */
+    postponeUpload(entry: OutboxEntry, now: number): Promise<void>
     /** Removes the entries that did not change since `readOutbox`. */
     removeOutbox(entries: readonly OutboxEntry[]): Promise<void>
     /** Writes changes from the server. A newer change of this device in the outbox wins. */
@@ -87,8 +92,8 @@ export interface SyncStore {
      */
     removeDownload(bookId: string): Promise<boolean>
     /**
-     * Ends the sync on this device: removes the outbox, the state, and the books that have no
-     * file here. Resolves with the ids of the removed books.
+     * Ends the sync on this device: removes the state and the books that have no file here.
+     * The outbox stays. Resolves with the ids of the removed books.
      */
     reset(): Promise<string[]>
 }
@@ -170,11 +175,6 @@ function liveItem<K extends SyncRecordKind>(
 
 const NOTE_STORE = { bookmark: 'bookmarks', highlight: 'highlights' } as const
 
-/** The time of the last change of a book that has no entry in the outbox. */
-function bookVersion(book: BookRecord): number {
-    return Math.max(book.addedAt, book.lastOpenedAt ?? 0)
-}
-
 /** Reads books by file hash and keeps them for the rest of the transaction. */
 function bookFinder(books: IDBObjectStore) {
     const known = new Map<string, BookRecord | null>()
@@ -222,7 +222,13 @@ export function createSyncStore(database: Database): SyncStore {
         const outbox = transaction.objectStore('outbox')
         const books = bookFinder(transaction.objectStore('books'))
         const all = await resultOf<OutboxEntry[]>(outbox.getAll())
-        const entries = all.sort(byKind).slice(0, limit)
+        // Records and files have their own limit, so many waiting uploads cannot hold back a
+        // reading position. The file that waited longest comes first.
+        const records = all.filter((entry) => entry.kind !== 'file').sort(byKind)
+        const uploads = all
+            .filter((entry) => entry.kind === 'file')
+            .sort((a, b) => a.changedAt - b.changedAt)
+        const entries = [...records.slice(0, limit), ...uploads.slice(0, limit)]
         const batch: OutboxBatch = { changes: [], files: [], stale: [] }
 
         for (const entry of entries) {
@@ -309,7 +315,13 @@ export function createSyncStore(database: Database): SyncStore {
                     continue
                 }
                 if (existing) {
-                    const next: BookRecord = { ...existing, ...item.value, id: existing.id }
+                    // The time of the last open on this device stays.
+                    const next: BookRecord = {
+                        ...existing,
+                        ...item.value,
+                        id: existing.id,
+                        lastOpenedAt: existing.lastOpenedAt,
+                    }
                     if (JSON.stringify(next) === JSON.stringify(existing)) continue
                     booksStore.put(next)
                     books.set(item.key, next)
@@ -412,7 +424,7 @@ export function createSyncStore(database: Database): SyncStore {
                     const hashes = new Map<string, string>()
                     for (const book of books) {
                         hashes.set(book.id, book.fileHash)
-                        add('book', book.fileHash, bookVersion(book))
+                        add('book', book.fileHash, book.addedAt)
                         if (!book.remoteOnly) add('file', book.fileHash, book.addedAt)
                     }
                     for (const record of progress) {
@@ -434,6 +446,19 @@ export function createSyncStore(database: Database): SyncStore {
                 mode: 'readonly',
                 failureMessage: 'Unable to read the changes for the sync.',
                 body: (transaction) => readOutboxIn(transaction, limit),
+            }),
+
+        postponeUpload: (entry, now) =>
+            runAsync(database, {
+                stores: 'outbox',
+                mode: 'readwrite',
+                failureMessage: 'Unable to update the changes for the sync.',
+                body: async (transaction) => {
+                    const outbox = transaction.objectStore('outbox')
+                    const current = await resultOf<OutboxEntry | undefined>(outbox.get(entry.id))
+                    if (current)
+                        outbox.put({ ...current, changedAt: Math.max(now, current.changedAt) })
+                },
             }),
 
         removeOutbox: (entries) =>
@@ -532,7 +557,8 @@ export function createSyncStore(database: Database): SyncStore {
                 mode: 'readwrite',
                 failureMessage: 'Unable to stop the sync.',
                 body: async (transaction) => {
-                    transaction.objectStore('outbox').clear()
+                    // The outbox stays. It can have changes that the server did not get yet,
+                    // for example deletes, and they must go when the sync is on again.
                     transaction.objectStore('syncState').clear()
                     const books = await resultOf<BookRecord[]>(
                         transaction.objectStore('books').getAll(),

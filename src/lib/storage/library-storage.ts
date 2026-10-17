@@ -55,6 +55,9 @@ export function outboxEntry(
     return { id: `${kind}:${key}`, kind, key, ...change }
 }
 
+/** Fields of a book record that a change of does not sync. */
+const LOCAL_FIELDS = new Set<string>(['lastOpenedAt', 'remoteOnly'])
+
 /** The record without the field that is true only on a device that has no file. */
 export function withFile(book: BookRecord): BookRecord {
     const { remoteOnly: _, ...rest } = book
@@ -181,7 +184,10 @@ export function createLibraryStorage(options: LibraryStorageOptions = {}): Libra
         },
 
         updateBook: (id, patch) => {
-            const tracked = tracking()
+            // The time of the last open stays on this device. An open on one device must not
+            // win over a delete of the book on a different device.
+            const synced = Object.keys(patch).some((field) => !LOCAL_FIELDS.has(field))
+            const tracked = synced && tracking()
             const written = database.run({
                 stores: tracked ? ['books', 'outbox'] : 'books',
                 mode: 'readwrite',

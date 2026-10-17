@@ -534,11 +534,21 @@ describe('createLibraryStorage', () => {
 
         it('uses the time of the change for a changed book', async () => {
             await addBook('a')
-            await storage.updateBook('a', { lastOpenedAt: 5000 })
-            await storage.updateBook('missing', { lastOpenedAt: 5000 })
+            await storage.updateBook('a', { title: 'A new title' })
+            await storage.updateBook('missing', { title: 'A new title' })
 
             expect(await readOutbox()).toContainEqual(entry('book', 'hash-a', false, 9000))
             expect(await readOutbox()).toHaveLength(2)
+        })
+
+        it('keeps the time of the last open on this device', async () => {
+            await addBook('a')
+            onChange.mockClear()
+
+            await storage.updateBook('a', { lastOpenedAt: 5000 })
+
+            expect(await readOutbox()).toContainEqual(entry('book', 'hash-a', false, 1000))
+            expect(onChange).not.toHaveBeenCalled()
         })
 
         it('keys the progress by the file hash and versions it by its own time', async () => {

@@ -110,7 +110,7 @@ export async function createSyncController(
         },
         syncNow: run,
         downloadFile: (book) => engine.downloadFile(book),
-        removeDownload: (bookId) => store.removeDownload(bookId),
+        removeDownload: (bookId) => engine.removeDownload(bookId),
         async destroy() {
             destroyed = true
             clearTimeout(timer)
