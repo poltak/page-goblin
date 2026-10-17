@@ -5,6 +5,7 @@ Quickstart for coding sessions in `page-goblin`.
 ## Project summary
 
 - A static EPUB reader that runs fully in the browser and installs as a PWA. GitHub Pages hosts it.
+- An optional sync copies books and reading data between devices through a Cloudflare Worker that each person runs in their own account. With sync off, the app works with no network and no login.
 - Plain HTML, CSS and TypeScript. No UI library. No runtime npm dependency.
 - Vite builds it, Vitest with jsdom tests it, Prettier formats it.
 - `README.md` has the feature list and the directory map.
@@ -25,12 +26,15 @@ Quickstart for coding sessions in `page-goblin`.
 - `pnpm test:single` runs all tests one time.
 - `pnpm build` builds `dist/`.
 - `pnpm format` formats all files.
+- `pnpm --dir sync-server dev` runs the sync server on this computer, after `pnpm --dir sync-server install`.
 
 ## Where things are
 
-- Contracts between modules are type files. Read them first: `src/lib/types.ts`, `src/lib/epub/types.ts`, `src/lib/content/types.ts`, `src/lib/reader/types.ts`, `src/lib/storage/types.ts`, `src/ui/reader/types.ts`, `src/ui/reader/parts.ts`.
+- Contracts between modules are type files. Read them first: `src/lib/types.ts`, `src/lib/epub/types.ts`, `src/lib/content/types.ts`, `src/lib/reader/types.ts`, `src/lib/storage/types.ts`, `src/lib/sync/types.ts`, `src/ui/reader/types.ts`, `src/ui/reader/parts.ts`, `sync-server/src/protocol.ts`.
 - `src/lib/epub` has no imports from the rest of the app. Keep it that way, so it can move to the `poltak-epub-parser` package.
 - `src/main.ts` imports only what the first paint of the library needs. The importer, the EPUB engine, the reader and its parts load on demand.
+- The sync is `src/lib/sync` (engine, client, code), `src/lib/storage/sync-store.ts` (its transactions) and `src/ui/sync` (host, controller, dialog). Only `src/ui/sync/host.ts` and `src/lib/sync/config.ts` are in the first chunk.
+- `sync-server` is the Worker. It imports nothing from the app, because the Deploy to Cloudflare button deploys the directory alone. Its tests run from the root with `pnpm test:single`.
 - The reader screen is `src/ui/reader`. `session/` is the model of one open book. `screen/` is the layout, bars and keyboard. `panels/`, `tools/`, `speed/` and `listen/` are parts that the screen loads at their first use.
 
 ## How UI code is written
@@ -43,6 +47,13 @@ Quickstart for coding sessions in `page-goblin`.
 ## A position in a book
 
 `Locator` is `{ spineIndex, offset }`. The offset counts characters through the text of the chapter, by the rule in the comment of `TextModel` in `src/lib/content/types.ts`. Progress, bookmarks, highlights, the speed reader and speech all use it. Do not save a page number or a scroll offset.
+
+## Sync
+
+- Write books, progress, bookmarks and highlights only through `LibraryStorage`. While sync is on, each of its writes puts an outbox entry in the same transaction. A write in a different place does not sync.
+- The sync key of a book, its progress and its file is the file hash. The local book id is different on each device.
+- People run their own copy of `sync-server`. A change of `sync-server/src/protocol.ts` must keep old servers and old apps working.
+- Server data is not trusted. `src/lib/sync/records.ts` checks each record before it goes into storage.
 
 ## Tests
 
