@@ -4,3 +4,6 @@ pnpm-lock.yaml
 # Output
 dist
 coverage
+
+# Local state of wrangler dev
+.wrangler

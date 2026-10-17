@@ -1,0 +1,4 @@
+# wrangler needs the native binaries of these two packages.
+allowBuilds:
+    esbuild: true
+    workerd: true

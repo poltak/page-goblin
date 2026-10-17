@@ -1,0 +1,25 @@
+{
+    "name": "page-goblin-sync",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "description": "The sync server of Page Goblin: a Cloudflare Worker with D1 and R2.",
+    "packageManager": "pnpm@12.6.0",
+    "scripts": {
+        "dev": "wrangler dev",
+        "deploy": "wrangler deploy"
+    },
+    "devDependencies": {
+        "wrangler": "^4.150.0"
+    },
+    "cloudflare": {
+        "bindings": {
+            "SETUP_CODE": {
+                "description": "A secret of 16 or more characters. You type it in Page Goblin one time, to connect the app to this server. Make one with `openssl rand -hex 16` and keep it in your password manager."
+            },
+            "ALLOWED_ORIGINS": {
+                "description": "The addresses of the app that may use this server, separated by commas. Keep `https://poltak.github.io` to use the public app."
+            }
+        }
+    }
+}

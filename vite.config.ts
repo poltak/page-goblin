@@ -27,7 +27,11 @@ export default defineConfig({
         modulePreload: { polyfill: false },
     },
     test: {
-        include: ['src/**/*.{test,spec}.{js,ts}', 'build/**/*.{test,spec}.{js,ts}'],
+        include: [
+            'src/**/*.{test,spec}.{js,ts}',
+            'build/**/*.{test,spec}.{js,ts}',
+            'sync-server/test/**/*.{test,spec}.ts',
+        ],
         environment: 'jsdom',
         passWithNoTests: true,
     },

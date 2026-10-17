@@ -1,0 +1,17 @@
+{
+    "$schema": "node_modules/wrangler/config-schema.json",
+    "name": "page-goblin-sync",
+    "main": "src/index.ts",
+    "compatibility_date": "2026-10-01",
+    "workers_dev": true,
+    "observability": { "enabled": true },
+    "vars": {
+        // The origins that may call this server from a browser, separated by commas.
+        // Add http://localhost:5173 to test with the dev server of the app.
+        "ALLOWED_ORIGINS": "https://poltak.github.io",
+    },
+    // Wrangler makes the database and the bucket at the first deploy. The Worker makes its
+    // tables at the first request.
+    "d1_databases": [{ "binding": "DB", "database_name": "page-goblin-sync" }],
+    "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "page-goblin-sync" }],
+}

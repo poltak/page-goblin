@@ -1,0 +1,2 @@
+# A secret of 16 or more characters. Make one with: openssl rand -hex 16
+SETUP_CODE=

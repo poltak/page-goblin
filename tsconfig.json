@@ -28,6 +28,8 @@
         "src/**/*.js",
         "scripts/**/*.ts",
         "build/**/*.ts",
+        "sync-server/src/**/*.ts",
+        "sync-server/test/**/*.ts",
         "*.config.ts",
         "*.config.js"
     ]
