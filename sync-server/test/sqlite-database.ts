@@ -3,8 +3,11 @@
  * of the handler runs here as it does on Cloudflare.
  */
 
-import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
+import type { DatabaseSync, SQLInputValue } from 'node:sqlite'
 import type { Database, Statement } from '../src/handler'
+
+// Not an import: Vite refuses to bundle node:sqlite for the tests that run in jsdom.
+const sqlite = process.getBuiltinModule('node:sqlite') as typeof import('node:sqlite')
 
 class SqliteStatement implements Statement {
     constructor(
@@ -40,7 +43,7 @@ class SqliteStatement implements Statement {
 }
 
 export function createSqliteDatabase(): Database & { close(): void } {
-    const db = new DatabaseSync(':memory:')
+    const db = new sqlite.DatabaseSync(':memory:')
     return {
         prepare: (sql) => new SqliteStatement(db, sql),
         async batch<T>(statements: Statement[]) {

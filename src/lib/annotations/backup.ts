@@ -28,7 +28,7 @@ export const BACKUP_FORMAT = 'page-goblin-backup'
 export const BACKUP_VERSION = 1
 
 const NOT_A_BACKUP = 'This file is not a Page Goblin backup.'
-const SHA_256_HEX = /^[0-9a-f]{64}$/
+export const SHA_256_HEX = /^[0-9a-f]{64}$/
 const ISO_DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/
 /**
  * The application makes UUIDs. Other characters are not necessary, and an id from a file can
@@ -165,23 +165,23 @@ export async function createBackup({
     }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 /** A spine index or a text offset. */
-function isCount(value: unknown): value is number {
+export function isCount(value: unknown): value is number {
     return Number.isSafeInteger(value) && (value as number) >= 0
 }
 
 // The comparisons below are false for NaN and for an infinite number. JSON text can give an
 // infinite number: `1e999` parses to Infinity.
 
-function isFraction(value: unknown): value is number {
+export function isFraction(value: unknown): value is number {
     return typeof value === 'number' && value >= 0 && value <= 1
 }
 
-function isTime(value: unknown): value is number {
+export function isTime(value: unknown): value is number {
     return typeof value === 'number' && value >= 0 && value <= MAX_TIME
 }
 
@@ -193,7 +193,7 @@ function isColor(value: unknown): value is HighlightColor {
     return typeof value === 'string' && (HIGHLIGHT_COLORS as readonly string[]).includes(value)
 }
 
-function parseLocator(raw: unknown): Locator | null {
+export function parseLocator(raw: unknown): Locator | null {
     if (!isRecord(raw)) return null
     const { spineIndex, offset } = raw
     return isCount(spineIndex) && isCount(offset) ? { spineIndex, offset } : null
@@ -208,7 +208,7 @@ function parseProgress(raw: unknown): BackupBook['progress'] {
         : null
 }
 
-function parseBookmark(raw: unknown): BackupBookmark | null {
+export function parseBookmark(raw: unknown): BackupBookmark | null {
     if (!isRecord(raw)) return null
     const locator = parseLocator(raw.locator)
     const { id, fraction, chapterTitle, excerpt, createdAt } = raw
@@ -222,7 +222,7 @@ function parseBookmark(raw: unknown): BackupBookmark | null {
     return valid ? { id, locator, fraction, chapterTitle, excerpt, createdAt } : null
 }
 
-function parseHighlight(raw: unknown): BackupHighlight | null {
+export function parseHighlight(raw: unknown): BackupHighlight | null {
     if (!isRecord(raw)) return null
     const { id, spineIndex, start, end, text, color, note } = raw
     const { chapterTitle, fraction, createdAt, updatedAt } = raw
