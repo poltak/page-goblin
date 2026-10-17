@@ -15,6 +15,7 @@ import type {
     BookRecord,
     HighlightRecord,
     LibraryStorage,
+    ProgressRecord,
 } from '$lib/storage/types'
 import type { HighlightColor, Locator, TextRange } from '$lib/types'
 
@@ -191,4 +192,9 @@ export interface ReaderMountOptions {
 
 export interface MountedReader {
     destroy(): Promise<void>
+    /**
+     * A sync brought a newer reading position from a different device. When the position is
+     * not on screen, the reader offers to go there. It does not move by itself.
+     */
+    offerPosition?(progress: ProgressRecord): void
 }

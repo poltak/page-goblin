@@ -422,6 +422,91 @@ describe('createReaderHost', () => {
         expect(window.scrollTo).not.toHaveBeenCalled()
         expect(libraryView.hidden).toBe(false)
     })
+
+    describe('a book with no file on this device', () => {
+        const remote = { id: 'r1', title: 'Persuasion', remoteOnly: true }
+
+        function makeRemoteHost(changes: Partial<ReaderHostOptions> = {}): ReaderHost {
+            return makeHost({
+                storage: {
+                    getBook: async (id: string) => (id === 'r1' ? remote : books[id]),
+                } as unknown as LibraryStorage,
+                ...changes,
+            })
+        }
+
+        it('downloads the file before the reader mounts', async () => {
+            const download = deferred<void>()
+            const downloadFile = vi.fn(() => download.promise)
+            const host = makeRemoteHost({ downloadFile })
+
+            host.show('r1')
+            await vi.waitFor(() => expect(downloadFile).toHaveBeenCalledWith(remote))
+            expect(mountReader).not.toHaveBeenCalled()
+
+            download.resolve()
+            await host.settled()
+            expect(mounts.map((mount) => mount.bookId)).toEqual(['r1'])
+        })
+
+        it('reports a failed download and shows the library', async () => {
+            const error = new Error('The sync server did not answer.')
+            const host = makeRemoteHost({ downloadFile: () => Promise.reject(error) })
+
+            host.show('r1')
+            await host.settled()
+
+            expect(failures).toEqual([{ bookId: 'r1', reason: 'download', error }])
+            expect(mountReader).not.toHaveBeenCalled()
+            expect(libraryView.hidden).toBe(false)
+        })
+
+        it('does not open the book with the sync off', async () => {
+            const host = makeRemoteHost()
+
+            host.show('r1')
+            await host.settled()
+
+            expect(failures[0].reason).toBe('download')
+            expect(String(failures[0].error)).toContain('Turn on sync')
+        })
+
+        it('does not mount a book that the user left during the download', async () => {
+            const download = deferred<void>()
+            const host = makeRemoteHost({ downloadFile: () => download.promise })
+
+            host.show('r1')
+            await vi.waitFor(() => expect(readerView.hidden).toBe(false))
+            host.show(null)
+            download.resolve()
+            await host.settled()
+
+            expect(mountReader).not.toHaveBeenCalled()
+            expect(failures).toEqual([])
+        })
+    })
+
+    it('gives a position from a different device to the reader of that book only', async () => {
+        const offerPosition = vi.fn()
+        mountReader.mockImplementation(async (options) => {
+            await fakeReader(options)
+            return { destroy: async () => options.root.replaceChildren(), offerPosition }
+        })
+        const host = makeHost()
+        const progress = (bookId: string) => ({
+            bookId,
+            locator: { spineIndex: 1, offset: 10 },
+            fraction: 0.6,
+            updatedAt: 5000,
+        })
+
+        host.show('b1')
+        await host.settled()
+        host.offerPosition(progress('b2'))
+        host.offerPosition(progress('b1'))
+
+        expect(offerPosition.mock.calls).toEqual([[progress('b1')]])
+    })
 })
 
 // theme-init.js hides the library before the first paint for each hash that starts with

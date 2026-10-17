@@ -20,6 +20,8 @@ export interface AppActionsOptions {
     bookCount(): number
     /** A restore changed reading positions. The cards must read them again. */
     onRestored(): void
+    /** True while the sync is on. */
+    syncOn?(): boolean
 }
 
 export interface AppActions {
@@ -33,6 +35,7 @@ export function createAppActions({
     storage,
     bookCount,
     onRestored,
+    syncOn,
 }: AppActionsOptions): AppActions {
     return {
         async showStorage(opener) {
@@ -41,6 +44,9 @@ export function createAppActions({
             qs('.storage-books', dialog).textContent = bookCountText(count, count)
             const usage = qs('.storage-usage', dialog)
             usage.textContent = ''
+            const synced = syncOn?.() === true
+            qs('.storage-local', dialog).hidden = synced
+            qs('.storage-synced', dialog).hidden = !synced
             // Safari removes the data of a site that the user did not visit for 7 days. The
             // installed app on iOS has its own storage, and this rule does not apply to it.
             qs('.storage-safari', dialog).hidden = !(isIos() && !isStandalone())

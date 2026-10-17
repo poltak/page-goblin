@@ -10,7 +10,7 @@ import { bookHash } from '../app/router'
 import { cloneTemplate, qs } from '../dom'
 import { isFinished, progressPercent, progressText } from './format'
 
-export type CardBook = Pick<BookRecord, 'id' | 'title' | 'author' | 'hasCover'>
+export type CardBook = Pick<BookRecord, 'id' | 'title' | 'author' | 'hasCover' | 'remoteOnly'>
 
 /**
  * `data-cover` of a card:
@@ -33,6 +33,9 @@ export function setCardBook(card: HTMLElement, book: CardBook): void {
     qs('.book-card-author', card).textContent = book.author
     qs('.book-cover-fallback', card).textContent = book.title
     qs('.book-card-menu', card).setAttribute('aria-label', `More actions for ${book.title}`)
+    const remote = book.remoteOnly === true
+    qs('.book-card-cloud', card).hidden = !remote
+    qs('.book-card-remote', card).hidden = !remote
 }
 
 /** Shows the progress bar and the percent, or hides them when the book is not started. */

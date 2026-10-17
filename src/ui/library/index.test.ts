@@ -774,6 +774,141 @@ describe('refreshBook', () => {
     })
 })
 
+describe('sync', () => {
+    it('has no Sync item in the app menu without the sync', async () => {
+        await startScreen().load()
+
+        expect(el('#app-menu [data-action="sync"]').hidden).toBe(true)
+    })
+
+    let sync: {
+        isOn: ReturnType<typeof vi.fn<() => boolean>>
+        removeDownload: ReturnType<typeof vi.fn<(bookId: string) => Promise<boolean>>>
+        openDialog: ReturnType<typeof vi.fn<(opener: Element | null) => void>>
+    }
+
+    beforeEach(() => {
+        sync = {
+            isOn: vi.fn(() => true),
+            removeDownload: vi.fn(async (bookId: string) => {
+                await storage.updateBook(bookId, { remoteOnly: true })
+                return true
+            }),
+            openDialog: vi.fn(),
+        }
+    })
+
+    function startSyncedScreen(): LibraryScreen {
+        screen = createLibraryScreen({
+            root: el('#library-view'),
+            storage,
+            settings,
+            onOpenBook,
+            sync,
+        })
+        screens.push(screen)
+        return screen
+    }
+
+    function click(target: Element): void {
+        target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    }
+
+    function openRemove(id: string): HTMLDialogElement {
+        click(card(id).querySelector('.book-card-menu')!)
+        click(el('#book-menu [data-action="remove"]'))
+        return el<HTMLDialogElement>('#remove-dialog')
+    }
+
+    const cloud = (id: string) => card(id).querySelector<HTMLElement>('.book-card-cloud')!
+
+    it('marks a book that has no file on this device', async () => {
+        await addBooks(makeBook('a', { remoteOnly: true }), makeBook('b'))
+        await startSyncedScreen().load()
+
+        expect(cloud('a').hidden).toBe(false)
+        expect(card('a').querySelector<HTMLElement>('.book-card-remote')!.hidden).toBe(false)
+        expect(cloud('b').hidden).toBe(true)
+    })
+
+    it('removes a book from all devices, or only its download', async () => {
+        await addBooks(makeBook('a'))
+        await startSyncedScreen().load()
+
+        const dialog = openRemove('a')
+        expect(dialog.querySelector('.remove-scope')?.textContent).toBe('all your devices')
+        expect(dialog.querySelector<HTMLElement>('.remove-download')!.hidden).toBe(false)
+
+        click(dialog.querySelector('[value="remove-download"]')!)
+
+        await vi.waitFor(() => expect(cloud('a').hidden).toBe(false))
+        expect(sync.removeDownload).toHaveBeenCalledWith('a')
+        expect(cardIds()).toEqual(['a'])
+        expect(toastTexts()).toEqual(['The download of "Title a" was removed.'])
+    })
+
+    it('keeps the download when the server does not have the file yet', async () => {
+        sync.removeDownload.mockResolvedValue(false)
+        await addBooks(makeBook('a'))
+        await startSyncedScreen().load()
+
+        click(openRemove('a').querySelector('[value="remove-download"]')!)
+
+        await vi.waitFor(() => expect(toastTexts()).toHaveLength(1))
+        expect(toastTexts()[0]).toContain('does not have this book yet')
+        expect(cloud('a').hidden).toBe(true)
+    })
+
+    it('offers no download removal for a book with no file here, or with the sync off', async () => {
+        await addBooks(makeBook('a', { remoteOnly: true }), makeBook('b'))
+        await startSyncedScreen().load()
+
+        let dialog = openRemove('a')
+        expect(dialog.querySelector<HTMLElement>('.remove-download')!.hidden).toBe(true)
+        click(dialog.querySelector('[value="cancel"]')!)
+        await vi.waitFor(() => expect(dialog.open).toBe(false))
+
+        sync.isOn.mockReturnValue(false)
+        dialog = openRemove('b')
+        expect(dialog.querySelector<HTMLElement>('.remove-download')!.hidden).toBe(true)
+        expect(dialog.querySelector('.remove-scope')?.textContent).toBe('this device')
+    })
+
+    it('shows the books that a sync added, changed and removed', async () => {
+        await addBooks(makeBook('a'), makeBook('b'))
+        await startSyncedScreen().load()
+
+        await storage.deleteBook('a')
+        await storage.updateBook('b', { title: 'A new title' })
+        await addBooks(makeBook('c', { remoteOnly: true }))
+        await screen.applySyncChanges(['a', 'b', 'c'])
+
+        expect([...cardIds()].sort()).toEqual(['b', 'c'])
+        expect(card('b').querySelector('.book-card-title')?.textContent).toBe('A new title')
+        expect(cloud('c').hidden).toBe(false)
+    })
+
+    it('waits for the first read of the library, which gets all books', async () => {
+        await addBooks(makeBook('a'))
+        startSyncedScreen()
+
+        await screen.applySyncChanges(['a'])
+
+        expect(cards()).toHaveLength(0)
+    })
+
+    it('opens the sync dialog from the app menu', async () => {
+        await startSyncedScreen().load()
+        const item = el('#app-menu [data-action="sync"]')
+
+        expect(item.hidden).toBe(false)
+        click(el('#app-menu-button'))
+        click(item)
+
+        expect(sync.openDialog).toHaveBeenCalledTimes(1)
+    })
+})
+
 describe('capturePosition', () => {
     let scrollY: number
 

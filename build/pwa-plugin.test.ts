@@ -154,7 +154,7 @@ describe('injectContentSecurityPolicy', () => {
         expect(CONTENT_SECURITY_POLICY).toBe(
             "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
                 "img-src 'self' blob: data:; font-src 'self' blob: data:; media-src 'self' blob:; " +
-                "connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; " +
+                "connect-src 'self' https://*.workers.dev; worker-src 'self'; object-src 'none'; base-uri 'self'; " +
                 "form-action 'none'",
         )
     })

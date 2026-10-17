@@ -416,3 +416,43 @@ describe('startReader', () => {
         })
     })
 })
+
+describe('a position from a different device', () => {
+    const progress = (spineIndex: number, offset: number, fraction: number) => ({
+        bookId: 'book-1',
+        locator: { spineIndex, offset },
+        fraction,
+        updatedAt: 5000,
+    })
+    const toastTexts = () =>
+        Array.from(document.querySelectorAll('#toasts .toast span')).map((item) => item.textContent)
+
+    it('offers to go to a position that is not on screen', async () => {
+        const { reader, resolve, session } = setup()
+        await flush()
+        resolve()
+        await flush()
+
+        // The fake session shows the text from 80 to 140 of chapter 1.
+        reader.offerPosition(progress(1, 100, 0.3))
+        expect(toastTexts()).toEqual([])
+
+        reader.offerPosition(progress(2, 5, 0.62))
+        expect(toastTexts()).toEqual(['You read to 62% on a different device.'])
+
+        document.querySelector<HTMLButtonElement>('#toasts .toast button')!.click()
+        expect(session.goTo).toHaveBeenCalledWith({ spineIndex: 2, offset: 5 }, { remember: true })
+    })
+
+    it('offers nothing before the book is open or after the reader is gone', async () => {
+        const { reader, resolve } = setup()
+        reader.offerPosition(progress(2, 5, 0.62))
+        await flush()
+        resolve()
+        await flush()
+        await reader.destroy()
+        reader.offerPosition(progress(2, 5, 0.62))
+
+        expect(toastTexts()).toEqual([])
+    })
+})

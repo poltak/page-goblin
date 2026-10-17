@@ -55,6 +55,7 @@ const ICON_NAMES = [
     'align-justify',
     'eye',
     'clock',
+    'cloud',
 ] as const satisfies readonly IconName[]
 
 // The type check fails here when IconName has a name that is not in the list above.

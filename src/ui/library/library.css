@@ -224,6 +224,23 @@
     opacity: 1;
 }
 
+/* A book that has no file on this device. The file downloads when the book opens. */
+.book-card-cloud {
+    position: absolute;
+    top: var(--space-2);
+    right: var(--space-2);
+    /* Above the cover image, which comes later in the cover element. */
+    z-index: var(--z-raised);
+    display: grid;
+    place-items: center;
+    width: var(--space-6);
+    height: var(--space-6);
+    border-radius: var(--radius-full);
+    background: var(--surface-raised);
+    color: var(--fg-muted);
+    box-shadow: var(--shadow-raised);
+}
+
 /* A card that the app points at: a new book, or the book of a file that was added before. */
 .book-card.is-marked::before {
     content: '';

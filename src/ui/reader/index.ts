@@ -34,5 +34,5 @@ export async function mountReader(options: ReaderMountOptions): Promise<MountedR
         showToast({ message: MISSING_FILE_MESSAGE, tone: 'error' })
         options.onExit()
     })
-    return { destroy: reader.destroy }
+    return { destroy: reader.destroy, offerPosition: reader.offerPosition }
 }

@@ -1,6 +1,7 @@
 /**
  * The start of the app. Only the code for the first paint of the library is imported here.
- * The importer, the EPUB parser, the reader and the annotations load at their first use.
+ * The importer, the EPUB parser, the reader, the annotations and the sync load at their first
+ * use.
  */
 
 // This module adds its install prompt listener on import, so it must load at the start.
@@ -16,6 +17,7 @@ import { connectTheme } from './ui/app/theme'
 import { showToast } from './ui/app/toast'
 import { qs } from './ui/dom'
 import { createLibraryScreen } from './ui/library'
+import { createSyncHost } from './ui/sync/host'
 
 connectTheme(settings)
 
@@ -23,14 +25,28 @@ connectTheme(settings)
 // then sets its own scroll offset for the history entry, which is less exact.
 if ('scrollRestoration' in history) history.scrollRestoration = 'manual'
 
-const storage = createLibraryStorage()
+// With the sync off, the sync host loads no sync code and the storage writes no outbox.
+const sync = createSyncHost({
+    onChanges(changes) {
+        void library.applySyncChanges(changes.books)
+        for (const progress of changes.progress) readerHost.offerPosition(progress)
+    },
+})
+const storage = createLibraryStorage({ changes: sync.tracker })
+sync.connectStorage(storage)
 const libraryView = qs('#library-view')
+
+// A link from a device that syncs: '#sync&server=...&code=...'. The secret must not stay in
+// the address bar or in the history.
+const syncLink = location.hash.startsWith('#sync&') ? location.hash : null
+if (syncLink) history.replaceState(history.state, '', '#/')
 
 const library = createLibraryScreen({
     root: libraryView,
     storage,
     settings,
     onOpenBook: (bookId) => router.openBook(bookId),
+    sync,
 })
 
 const readerHost = createReaderHost({
@@ -43,14 +59,14 @@ const readerHost = createReaderHost({
         router.closeBook()
         // A different tab removed the book. Its card must not stay in the grid.
         if (reason === 'missing') void library.refreshBook(bookId)
-        showToast({
-            message:
-                reason === 'missing'
-                    ? 'This book is not in your library.'
-                    : 'The book did not open. Try again.',
-            tone: 'error',
-        })
+        const messages = {
+            missing: 'This book is not in your library.',
+            download: `The book did not download. ${error instanceof Error ? error.message : ''}`,
+            error: 'The book did not open. Try again.',
+        }
+        showToast({ message: messages[reason].trim(), tone: 'error' })
     },
+    downloadFile: (book) => sync.downloadFile(book),
     onClosed: (bookId) => void library.refreshBook(bookId),
     captureLibraryPosition: (bookId) => library.capturePosition(bookId),
 })
@@ -67,6 +83,7 @@ const router = createRouter({
 })
 
 router.start()
+sync.start()
 
 // A page that starts on a book does not need the library at once. It reads the books when
 // the browser has time, so the grid is there when the reader closes.
@@ -85,6 +102,13 @@ registerServiceWorker({
         })
     },
 })
+
+if (syncLink) {
+    void import('./lib/sync/code').then(({ parseSyncLink }) => {
+        const link = parseSyncLink(syncLink)
+        if (link) sync.openDialog(null, link)
+    })
+}
 
 // Files that the system gives to the installed app, at the start or while the app is open.
 onFilesLaunched((files) => {

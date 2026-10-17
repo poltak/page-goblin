@@ -3,7 +3,7 @@
  * that loads when the first book opens.
  */
 
-import type { LibraryStorage } from '$lib/storage/types'
+import type { BookRecord, LibraryStorage, ProgressRecord } from '$lib/storage/types'
 import { cloneTemplate } from '../dom'
 import type { MountedReader, ReaderMountOptions } from '../reader/types'
 
@@ -13,14 +13,23 @@ export const LOADING_DELAY_MS = 150
 
 type MountReader = (options: ReaderMountOptions) => Promise<MountedReader>
 
+export interface OpenFailure {
+    bookId: string
+    reason: 'missing' | 'download' | 'error'
+    error?: unknown
+}
+
 export interface ReaderHostOptions {
     libraryView: HTMLElement
     readerView: HTMLElement
     storage: LibraryStorage
     /** The user closed the book in the reader. The router then asks for the library. */
     onExit(): void
-    /** The book is not in storage, or the reader did not start. The library is on screen. */
-    onOpenFailed(failure: { bookId: string; reason: 'missing' | 'error'; error?: unknown }): void
+    /**
+     * The book is not in storage, its file did not download, or the reader did not start. The
+     * library is on screen.
+     */
+    onOpenFailed(failure: OpenFailure): void
     /** The reader of this book is gone. Its progress in storage is final. */
     onClosed(bookId: string): void
     /**
@@ -30,6 +39,11 @@ export interface ReaderHostOptions {
     captureLibraryPosition?(bookId: string): () => void
     /** Loads the reader screen. The default is the dynamic import of `src/ui/reader`. */
     loadReader?: () => Promise<{ mountReader: MountReader }>
+    /**
+     * Gets the file of a book that has only its record on this device. Without it, such a
+     * book does not open.
+     */
+    downloadFile?(book: BookRecord): Promise<void>
 }
 
 export interface ReaderHost {
@@ -42,6 +56,8 @@ export interface ReaderHost {
     show(bookId: string | null): void
     /** Resolves when the screen shows what the last `show` call asked for. */
     settled(): Promise<void>
+    /** Gives a reading position from a different device to the reader of that book. */
+    offerPosition(progress: ProgressRecord): void
 }
 
 export function createReaderHost(options: ReaderHostOptions): ReaderHost {
@@ -78,28 +94,49 @@ export function createReaderHost(options: ReaderHostOptions): ReaderHost {
         }
     }
 
-    function fail(bookId: string, reason: 'missing' | 'error', error?: unknown): void {
+    function fail(bookId: string, reason: OpenFailure['reason'], error?: unknown): void {
         // The route still names the book. Without this, the loop would try the book again.
         if (wanted === bookId) wanted = null
         showViews()
         options.onOpenFailed({ bookId, reason, error })
     }
 
+    /**
+     * Loads the reader screen and the record of the book, and downloads the file of a book that
+     * has only its record here. Null when the book must not open.
+     */
+    async function prepare(
+        bookId: string,
+    ): Promise<{ module: { mountReader: MountReader }; book: BookRecord } | null> {
+        const [module, book] = await Promise.all([loadReader(), storage.getBook(bookId)])
+        if (wanted !== bookId) return null
+        if (!book) {
+            fail(bookId, 'missing')
+            return null
+        }
+        if (book.remoteOnly) {
+            try {
+                if (!options.downloadFile) throw new Error('Turn on sync to download this book.')
+                await options.downloadFile(book)
+            } catch (error) {
+                if (wanted === bookId) fail(bookId, 'download', error)
+                return null
+            }
+            if (wanted !== bookId) return null
+        }
+        return { module, book }
+    }
+
     async function mount(bookId: string): Promise<void> {
+        // The loading state also shows while a file downloads.
         const loading = setTimeout(() => {
             readerView.replaceChildren(cloneTemplate('reader-loading-template'))
         }, LOADING_DELAY_MS)
 
         try {
-            const [module, book] = await Promise.all([
-                loadReader(),
-                storage.getBook(bookId),
-            ]).finally(() => clearTimeout(loading))
-            if (wanted !== bookId) return
-            if (!book) {
-                fail(bookId, 'missing')
-                return
-            }
+            const prepared = await prepare(bookId).finally(() => clearTimeout(loading))
+            if (!prepared) return
+            const { module, book } = prepared
             document.title = book.title
             // The reader gets an empty element. It shows its own state while the book opens.
             readerView.replaceChildren()
@@ -158,5 +195,10 @@ export function createReaderHost(options: ReaderHostOptions): ReaderHost {
             if (!working) work = reconcile()
         },
         settled: () => work,
+        offerPosition(progress) {
+            if (mounted && mounted.bookId === progress.bookId && wanted === progress.bookId) {
+                mounted.reader?.offerPosition?.(progress)
+            }
+        },
     }
 }

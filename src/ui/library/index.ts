@@ -38,12 +38,22 @@ const MARK_MS = 2200
 /** Covers load when a card is this near to the screen. */
 const COVER_MARGIN = '400px 0px'
 
+/** The parts of the sync that the library uses. */
+export interface LibrarySync {
+    isOn(): boolean
+    /** Resolves false when the server does not have the file yet. */
+    removeDownload(bookId: string): Promise<boolean>
+    openDialog(opener: Element | null): void
+}
+
 export interface LibraryScreenOptions {
     /** The `main#library-view` element. */
     root: HTMLElement
     storage: LibraryStorage
     settings: SettingsStore
     onOpenBook(bookId: string): void
+    /** Without it, the library works as with the sync off. */
+    sync?: LibrarySync
 }
 
 export interface LibraryScreen {
@@ -53,6 +63,8 @@ export interface LibraryScreen {
     importFiles(files: readonly File[]): Promise<ImportSummary>
     /** Reads one book and its progress again, after the reader changed them. */
     refreshBook(bookId: string): Promise<void>
+    /** Shows the books that a sync added, changed or removed, with their new covers. */
+    applySyncChanges(bookIds: readonly string[]): Promise<void>
     /**
      * Call it before the library goes off screen for a book. The result puts the page back
      * at the same place when the library is on screen again.
@@ -292,6 +304,20 @@ export function createLibraryScreen(options: LibraryScreenOptions): LibraryScree
         updateView()
     }
 
+    async function applySyncChanges(bookIds: readonly string[]): Promise<void> {
+        // The first read of the library gets all books, so it needs no refresh.
+        if (loading === null) return
+        for (const bookId of bookIds) {
+            await refreshBook(bookId)
+            const entry = entries.get(bookId)
+            // A cover that arrived after its card showed the fallback tile.
+            if (entry?.book.hasCover && entry.card.dataset.cover !== 'shown') {
+                covers.release(bookId)
+                void showCover(entry.card)
+            }
+        }
+    }
+
     function capturePosition(bookId: string): () => void {
         const offset = window.scrollY
         const card = entries.get(bookId)?.card
@@ -423,11 +449,38 @@ export function createLibraryScreen(options: LibraryScreenOptions): LibraryScree
         showToast({ message: `"${shorten(book.title, 60)}" was removed.` })
     }
 
+    async function removeDownload(book: BookRecord): Promise<void> {
+        let removed: boolean
+        try {
+            removed = (await options.sync?.removeDownload(book.id)) === true
+        } catch (error) {
+            console.error(error)
+            showToast({ message: 'The download was not removed.', tone: 'error' })
+            return
+        }
+        if (!removed) {
+            showToast({
+                message:
+                    'The sync server does not have this book yet, so the download stays. Try again after the next sync.',
+                tone: 'error',
+            })
+            return
+        }
+        await refreshBook(book.id)
+        showToast({ message: `The download of "${shorten(book.title, 60)}" was removed.` })
+    }
+
     function confirmRemove(book: BookRecord, opener: Element | null): void {
+        const synced = options.sync?.isOn() === true
+        const download = synced && !book.remoteOnly
         qs('.remove-name', removeDialog).textContent = book.title
+        qs('.remove-scope', removeDialog).textContent = synced ? 'all your devices' : 'this device'
+        qs('.remove-download', removeDialog).hidden = !download
+        qs('.remove-download-text', removeDialog).hidden = !download
         openDialog(removeDialog, opener)
         void whenClosed(removeDialog).then((value) => {
             if (value === 'remove') void removeFromLibrary(book)
+            else if (value === 'remove-download' && download) void removeDownload(book)
         })
     }
 
@@ -539,12 +592,15 @@ export function createLibraryScreen(options: LibraryScreenOptions): LibraryScree
         storage,
         bookCount: () => order.length,
         onRestored: () => void refreshProgress(),
+        syncOn: () => options.sync?.isOn() === true,
+        onSync: options.sync && ((opener) => options.sync?.openDialog(opener)),
     })
 
     return {
         load,
         importFiles,
         refreshBook,
+        applySyncChanges,
         capturePosition,
         destroy() {
             for (const stop of stops) stop()

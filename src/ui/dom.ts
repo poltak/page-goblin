@@ -52,6 +52,7 @@ export type IconName =
     | 'align-justify'
     | 'eye'
     | 'clock'
+    | 'cloud'
 
 /** The first element that matches. Throws when there is none. */
 export function qs<T extends Element = HTMLElement>(

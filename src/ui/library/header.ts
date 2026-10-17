@@ -16,6 +16,10 @@ export interface LibraryHeaderOptions {
     bookCount(): number
     /** A restored backup changed reading positions. */
     onRestored(): void
+    /** True while the sync is on. */
+    syncOn?(): boolean
+    /** Opens the sync dialog. Without it, the menu has no Sync item. */
+    onSync?(opener: Element | null): void
 }
 
 export function connectLibraryHeader(options: LibraryHeaderOptions): void {
@@ -66,6 +70,7 @@ export function connectLibraryHeader(options: LibraryHeaderOptions): void {
     const appButton = qs('#app-menu-button')
     const appMenuElement = qs('#app-menu')
     const installItem = qs('[data-action="install"]', appMenuElement)
+    qs('[data-action="sync"]', appMenuElement).hidden = options.onSync === undefined
     const appMenu = createMenu({
         menu: appMenuElement,
         onOpen() {
@@ -81,6 +86,9 @@ export function connectLibraryHeader(options: LibraryHeaderOptions): void {
                 case 'import-backup':
                     // The file dialog opens only from inside the handler of the user action.
                     backupInput.click()
+                    break
+                case 'sync':
+                    options.onSync?.(anchor)
                     break
                 case 'storage':
                     withActions((actions) => actions.showStorage(anchor))

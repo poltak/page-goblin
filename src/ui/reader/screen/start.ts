@@ -4,6 +4,9 @@
  */
 
 import type { SettingsStore } from '$lib/settings/store'
+import type { ProgressRecord } from '$lib/storage/types'
+import { isLocatorInRange } from '$lib/types'
+import { showToast } from '../../app/toast'
 import type {
     MountedReader,
     OpenReaderSessionOptions,
@@ -27,7 +30,10 @@ export interface ReaderDeps {
     parts: PartFactories
 }
 
-export interface StartedReader extends MountedReader {
+/** How long the offer of a position from a different device stays on screen. */
+export const OFFER_DURATION_MS = 15_000
+
+export interface StartedReader extends Required<MountedReader> {
     /**
      * Resolves when the book is on screen, when the screen shows that the book did not open,
      * and when destroy() ran before the open ended. Rejects for a book that is not in the
@@ -44,6 +50,7 @@ export function startReader(options: ReaderMountOptions, deps: ReaderDeps): Star
     root.replaceChildren(frame.root)
 
     let screen: ReaderScreen | null = null
+    let openSession: ReaderSession | null = null
     let destroyed = false
     let closing: Promise<void> | null = null
     /**
@@ -80,6 +87,7 @@ export function startReader(options: ReaderMountOptions, deps: ReaderDeps): Star
                         parts: deps.parts,
                         onExit,
                     })
+                    openSession = session
                 } catch (error) {
                     console.error(error)
                     await session.destroy()
@@ -110,8 +118,31 @@ export function startReader(options: ReaderMountOptions, deps: ReaderDeps): Star
         frame.root.remove()
     }
 
+    function offerPosition(progress: ProgressRecord): void {
+        const session = openSession
+        const here = session?.position
+        if (!session || !here || destroyed) return
+        if (isLocatorInRange(progress.locator, here.visible)) return
+        const percent = Math.round(progress.fraction * 100)
+        showToast({
+            message: `You read to ${percent}% on a different device.`,
+            action: {
+                label: 'Go there',
+                onSelect: () => {
+                    if (openSession === session)
+                        void session.goTo(progress.locator, { remember: true })
+                },
+            },
+            duration: OFFER_DURATION_MS,
+        })
+    }
+
     return {
         ready,
-        destroy: () => (closing ??= close()),
+        destroy: () => {
+            openSession = null
+            return (closing ??= close())
+        },
+        offerPosition,
     }
 }

@@ -248,6 +248,10 @@
                 <svg class="icon" aria-hidden="true"><use href="#i-download" /></svg>
                 Install app
             </button>
+            <button class="menu-item" type="button" role="menuitem" data-action="sync">
+                <svg class="icon" aria-hidden="true"><use href="#i-cloud" /></svg>
+                Sync
+            </button>
             <button class="menu-item" type="button" role="menuitem" data-action="storage">
                 <svg class="icon" aria-hidden="true"><use href="#i-library" /></svg>
                 Storage
@@ -357,11 +361,24 @@
             <h2 class="modal-title" id="remove-heading">Remove this book?</h2>
             <p class="modal-body" id="remove-text">
                 <strong class="remove-name"></strong> and its bookmarks and highlights are removed
-                from this device. You cannot undo this.
+                from <span class="remove-scope">this device</span>. You cannot undo this.
+            </p>
+            <p class="modal-body remove-download-text" hidden>
+                To keep the book on your other devices, remove only the download. The book then
+                stays in this library, and it downloads again when you open it.
             </p>
             <div class="modal-actions">
                 <button class="btn btn-quiet" type="button" data-close value="cancel">
                     Cancel
+                </button>
+                <button
+                    class="btn remove-download"
+                    type="button"
+                    data-close
+                    value="remove-download"
+                    hidden
+                >
+                    Remove download
                 </button>
                 <button class="btn btn-danger" type="button" data-close value="remove">
                     Remove
@@ -380,7 +397,13 @@
             <div class="modal-body">
                 <p class="storage-books"></p>
                 <p class="storage-usage"></p>
-                <p>Books and notes are stored in this browser, on this device only.</p>
+                <p class="storage-local">
+                    Books and notes are stored in this browser, on this device only.
+                </p>
+                <p class="storage-synced" hidden>
+                    Books and notes are stored in this browser. Sync keeps a copy on your sync
+                    server.
+                </p>
                 <p class="storage-safari" hidden>
                     Safari can remove the books and notes after 7 days with no visit. The installed
                     app keeps its books and notes. Choose Install app in the More menu, or export a
@@ -431,14 +454,178 @@
             </div>
         </dialog>
 
+        <dialog
+            class="modal sync-dialog"
+            id="sync-dialog"
+            aria-labelledby="sync-heading"
+            closedby="any"
+            autofocus
+        >
+            <h2 class="modal-title" id="sync-heading">Sync</h2>
+
+            <form class="sync-view stack" data-view="connect" novalidate>
+                <div class="modal-body stack-sm">
+                    <p>
+                        Sync copies your books, reading positions, bookmarks and highlights between
+                        your devices. It uses a server in your own Cloudflare account. With sync
+                        off, all data stays on this device.
+                    </p>
+                    <p>
+                        <a
+                            href="https://github.com/poltak/page-goblin#sync"
+                            target="_blank"
+                            rel="noopener"
+                            >How to make your sync server</a
+                        >
+                    </p>
+                </div>
+                <div class="field">
+                    <label class="field-label" for="sync-server">Server address</label>
+                    <input
+                        class="input"
+                        id="sync-server"
+                        name="server"
+                        type="url"
+                        inputmode="url"
+                        autocomplete="off"
+                        autocapitalize="off"
+                        spellcheck="false"
+                        placeholder="https://page-goblin-sync.name.workers.dev"
+                    />
+                </div>
+                <div class="segmented" role="radiogroup" aria-label="Device">
+                    <label
+                        ><input type="radio" name="sync-mode" value="join" checked />I have a
+                        code</label
+                    >
+                    <label><input type="radio" name="sync-mode" value="setup" />First device</label>
+                </div>
+                <div class="field" data-mode="join">
+                    <label class="field-label" for="sync-code">Sync code</label>
+                    <input
+                        class="input num"
+                        id="sync-code"
+                        name="code"
+                        autocomplete="off"
+                        autocapitalize="characters"
+                        spellcheck="false"
+                        placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX"
+                    />
+                    <p class="field-help">A device that syncs shows its code here, in Sync.</p>
+                </div>
+                <div class="field" data-mode="setup" hidden>
+                    <label class="field-label" for="sync-setup-code">Setup code</label>
+                    <input
+                        class="input"
+                        id="sync-setup-code"
+                        name="setupCode"
+                        type="password"
+                        autocomplete="off"
+                    />
+                    <p class="field-help">
+                        The SETUP_CODE secret of your Worker. The app then makes a sync code for
+                        your other devices.
+                    </p>
+                </div>
+                <p class="field-error sync-error" role="alert" hidden></p>
+                <div class="modal-actions">
+                    <button class="btn btn-quiet" type="button" data-close>Cancel</button>
+                    <button class="btn btn-primary sync-submit" type="submit">Connect</button>
+                </div>
+            </form>
+
+            <div class="sync-view" data-view="exists" hidden>
+                <div class="modal-body stack-sm">
+                    <p>This server has a sync code already.</p>
+                    <p>
+                        Choose "I have a code" and enter the code of your other device. Or make a
+                        new code: your other devices then stop to sync until you enter the new code
+                        on them.
+                    </p>
+                </div>
+                <p class="field-error sync-error" role="alert" hidden></p>
+                <div class="modal-actions">
+                    <button class="btn btn-quiet" type="button" data-sync-action="back">
+                        Back
+                    </button>
+                    <button class="btn btn-danger" type="button" data-sync-action="replace">
+                        Make a new code
+                    </button>
+                </div>
+            </div>
+
+            <div class="sync-view stack" data-view="on" hidden>
+                <div class="modal-body stack-sm">
+                    <p class="sync-status" aria-live="polite"></p>
+                    <p class="sync-address text-faint"></p>
+                </div>
+                <div class="field">
+                    <span class="field-label" id="sync-code-label">Sync code</span>
+                    <p class="sync-code num" aria-labelledby="sync-code-label"></p>
+                    <p class="field-help">
+                        Keep the code secret, for example in your password manager. To add a device,
+                        open the link on it, or enter the server address and the code.
+                    </p>
+                </div>
+                <div class="cluster">
+                    <button class="btn btn-sm" type="button" data-sync-action="copy-code">
+                        <svg class="icon" aria-hidden="true"><use href="#i-copy" /></svg>
+                        Copy code
+                    </button>
+                    <button class="btn btn-sm" type="button" data-sync-action="copy-link">
+                        <svg class="icon" aria-hidden="true"><use href="#i-copy" /></svg>
+                        Copy link
+                    </button>
+                    <button class="btn btn-sm" type="button" data-sync-action="sync-now">
+                        <svg class="icon" aria-hidden="true"><use href="#i-rotate-ccw" /></svg>
+                        Sync now
+                    </button>
+                </div>
+                <p class="field-help sync-note" aria-live="polite"></p>
+                <div class="modal-actions">
+                    <button
+                        class="btn btn-quiet btn-danger"
+                        type="button"
+                        data-sync-action="turn-off"
+                    >
+                        Turn off
+                    </button>
+                    <button class="btn btn-primary" type="button" data-close>Done</button>
+                </div>
+            </div>
+
+            <div class="sync-view" data-view="turn-off" hidden>
+                <div class="modal-body stack-sm">
+                    <p>Turn off sync on this device?</p>
+                    <p>
+                        Books that you did not download to this device leave its library. They stay
+                        on the server and on your other devices.
+                    </p>
+                </div>
+                <p class="field-error sync-error" role="alert" hidden></p>
+                <div class="modal-actions">
+                    <button class="btn btn-quiet" type="button" data-sync-action="back">
+                        Cancel
+                    </button>
+                    <button class="btn btn-danger" type="button" data-sync-action="confirm-off">
+                        Turn off
+                    </button>
+                </div>
+            </div>
+        </dialog>
+
         <template id="book-card-template">
             <li class="book-card">
                 <a class="book-card-open" href="#/" draggable="false">
                     <span class="book-cover" aria-hidden="true">
                         <span class="book-cover-fallback"></span>
+                        <span class="book-card-cloud" hidden>
+                            <svg class="icon icon-sm"><use href="#i-cloud" /></svg>
+                        </span>
                     </span>
                     <span class="book-card-title"></span>
                     <span class="book-card-author"></span>
+                    <span class="visually-hidden book-card-remote" hidden>Not downloaded</span>
                 </a>
                 <div class="book-card-foot">
                     <div

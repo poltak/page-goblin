@@ -5,7 +5,8 @@ import type { HtmlTagDescriptor, Plugin } from 'vite'
 import type { PrecacheManifest } from '../src/service-worker.js'
 
 // Books are not trusted. This policy stops scripts and remote requests even if the sanitiser
-// of the book content misses something.
+// of the book content misses something. The one remote origin is the sync server: a Worker
+// that the user runs in their own Cloudflare account, so its subdomain is not known here.
 export const CONTENT_SECURITY_POLICY = [
     "default-src 'self'",
     "script-src 'self'",
@@ -13,7 +14,7 @@ export const CONTENT_SECURITY_POLICY = [
     "img-src 'self' blob: data:",
     "font-src 'self' blob: data:",
     "media-src 'self' blob:",
-    "connect-src 'self'",
+    "connect-src 'self' https://*.workers.dev",
     "worker-src 'self'",
     "object-src 'none'",
     "base-uri 'self'",
