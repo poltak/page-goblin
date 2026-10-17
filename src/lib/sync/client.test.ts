@@ -47,6 +47,15 @@ describe('createSyncClient', () => {
         await expect(client.pull({ since: 0 })).rejects.toMatchObject({ code: 'server' })
     })
 
+    it('reads the 413 page of Cloudflare as a file that is too large', async () => {
+        const fetch = vi.fn(() => reply('<html>Payload Too Large</html>', { status: 413 }))
+        const client = createSyncClient({ server: SERVER, token: 't', fetch })
+
+        await expect(
+            client.putBlob({ folder: 'files', hash: HASH }, new Blob(['x'])),
+        ).rejects.toMatchObject({ code: 'too-large' })
+    })
+
     it('reads no answer as offline', async () => {
         const fetch = vi.fn(() => Promise.reject(new TypeError('Failed to fetch')))
         const client = createSyncClient({ server: SERVER, token: 't', fetch })

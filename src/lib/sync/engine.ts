@@ -10,7 +10,7 @@ import { sha256Hex } from '$lib/storage/crypto'
 import type { LibraryFileStorage } from '$lib/storage/library-storage'
 import type { ApplyResult, OutboxBatch, SyncStore } from '$lib/storage/sync-store'
 import type { BookRecord, SyncItem } from '$lib/storage/types'
-import { MAX_PUSH_CHANGES } from '../../../sync-server/src/protocol'
+import { MAX_PUSH_CHANGES, parseChange } from '../../../sync-server/src/protocol'
 import { fromChange, toChange } from './records'
 import { SyncError } from './types'
 import type { StoredChange, SyncBackend, SyncStatus } from './types'
@@ -112,10 +112,16 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
             const batch = await store.readOutbox(MAX_PUSH_CHANGES)
             await dropStale(batch)
             if (batch.changes.length === 0) break
-            const response = await backend.push(
-                batch.changes.map(({ item }) => toChange(item)),
-                { keepalive },
-            )
+            // The server refuses a push with one change that is not valid. Such a change would
+            // stop all later pushes, so it stays on this device only.
+            const changes = []
+            for (const { item } of batch.changes) {
+                const change = toChange(item)
+                if (parseChange(change)) changes.push(change)
+                else console.warn('The sync skips a record that the server refuses.', item)
+            }
+            const response =
+                changes.length > 0 ? await backend.push(changes, { keepalive }) : { rejected: [] }
             await store.removeOutbox(batch.changes.map(({ entry }) => entry))
             if (response.rejected.length > 0) {
                 merge(changed, await store.applyRemote({ items: itemsOf(response.rejected) }))
@@ -163,7 +169,15 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
                     await store.removeOutbox([entry])
                     continue
                 }
-                await backend.putBlob({ folder: 'files', hash }, file)
+                try {
+                    await backend.putBlob({ folder: 'files', hash }, file)
+                } catch (error) {
+                    if (!(error instanceof SyncError && error.code === 'too-large')) throw error
+                    // The file stays on this device only. The other files still upload.
+                    console.warn('The sync server refused a file that is too large.', bookId)
+                    await store.removeOutbox([entry])
+                    continue
+                }
             }
             if (hasCover && !(await backend.hasBlob({ folder: 'covers', hash }))) {
                 const cover = await storage.getCover(bookId)

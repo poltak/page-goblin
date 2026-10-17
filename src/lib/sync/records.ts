@@ -25,7 +25,8 @@ export function toChange(item: SyncItem): Change {
     return {
         kind: item.kind,
         key: item.key,
-        updatedAt: item.updatedAt,
+        // The server takes whole milliseconds. A time from an old backup file can have a fraction.
+        updatedAt: Math.round(item.updatedAt),
         deleted: item.deleted,
         format: DATA_FORMAT,
         data: item.deleted ? null : JSON.stringify(item.value),

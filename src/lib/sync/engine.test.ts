@@ -333,6 +333,49 @@ describe('createSyncEngine', () => {
         await expect(device.engine.sync()).rejects.toMatchObject({ code: 'offline' })
     })
 
+    it('keeps a record that the server would refuse on this device, and syncs the rest', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        const phone = createDevice()
+        const laptop = createDevice()
+        await addBook(phone, 'a', 'epub bytes of a')
+        // Larger than the server takes in one record.
+        await phone.storage.putHighlight(
+            makeHighlight('huge', 'a', { note: 'x'.repeat(1_000_001) }),
+        )
+        // A time from an old backup file can have a fraction.
+        await phone.storage.putHighlight(makeHighlight('h', 'a', { updatedAt: 4000.5 }))
+
+        await phone.engine.sync()
+        await laptop.engine.sync()
+
+        const [copy] = await laptop.storage.listBooks()
+        const notes = await laptop.storage.listHighlights(copy.id)
+        expect(notes.map((highlight) => highlight.id)).toEqual(['h'])
+        expect(warn).toHaveBeenCalled()
+        expect(phone.engine.status.error).toBeNull()
+    })
+
+    it('skips a file that is too large for the server, and uploads the others', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        const big = await (async () => {
+            const phone = createDevice({
+                fetch: (input, init) =>
+                    init?.method === 'PUT' && input.includes(hashOf('big book'))
+                        ? Promise.resolve(new Response('<html>413</html>', { status: 413 }))
+                        : serverFetch(input, init),
+            })
+            await addBook(phone, 'big', 'big book')
+            await addBook(phone, 'small', 'small book')
+            await phone.engine.sync()
+            return phone
+        })()
+
+        expect(bucket.keys()).toContain(`files/${hashOf('small book')}`)
+        expect(bucket.keys()).not.toContain(`files/${hashOf('big book')}`)
+        expect(big.engine.status.error).toBeNull()
+        expect(warn).toHaveBeenCalled()
+    })
+
     it('runs one more time for a call during a run', async () => {
         const phone = createDevice()
         await addBook(phone, 'a', 'epub bytes of a')

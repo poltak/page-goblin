@@ -68,7 +68,9 @@ function badResponse(): SyncError {
 }
 
 async function errorOf(response: Response): Promise<SyncError> {
-    let code: SyncErrorCode = response.status >= 500 ? 'server' : 'bad-response'
+    // Cloudflare answers a body over its limit with its own 413 page, before the Worker runs.
+    let code: SyncErrorCode =
+        response.status === 413 ? 'too-large' : response.status >= 500 ? 'server' : 'bad-response'
     try {
         const body: unknown = await response.json()
         const given = isRecord(body) ? body.code : undefined
