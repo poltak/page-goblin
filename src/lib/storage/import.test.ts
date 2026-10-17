@@ -250,6 +250,50 @@ describe('importBook', () => {
             expect(findBookByHash).toHaveBeenCalledTimes(2)
         })
 
+        it('gives its file to a book that the sync added with no file', async () => {
+            const open = vi.fn(async () => makeBook())
+            const first = await importBook({ file: makeFile(), storage, open })
+            await deleteStoredFile(first.book.id)
+            await storage.updateBook(first.book.id, { remoteOnly: true })
+
+            const second = await importBook({ file: makeFile(), storage, open })
+
+            expect(second).toEqual({ book: first.book, duplicate: true })
+            expect(second.book.remoteOnly).toBeUndefined()
+            expect(await (await storage.getFile(first.book.id))?.text()).toBe(
+                'the bytes of the file',
+            )
+        })
+
+        it('keeps the file when the sync adds the same book during the import', async () => {
+            const synced = {
+                ...(await importBook({ file: makeFile(), storage, open: async () => makeBook() }))
+                    .book,
+            }
+            const record = { ...synced, remoteOnly: true }
+            const putFile = vi.fn(async () => {})
+            const findBookByHash = vi
+                .fn<(hash: string) => Promise<BookRecord | undefined>>()
+                .mockResolvedValueOnce(undefined)
+                .mockResolvedValueOnce(record)
+                .mockResolvedValueOnce(synced)
+            const error = new DOMException('The key is in use.', 'ConstraintError')
+
+            const result = await importBook({
+                file: makeFile(),
+                storage: {
+                    findBookByHash,
+                    addBook: () => Promise.reject(error),
+                    getFile: async () => undefined,
+                    putFile,
+                },
+                open: async () => makeBook(),
+            })
+
+            expect(putFile).toHaveBeenCalledOnce()
+            expect(result).toEqual({ book: synced, duplicate: true })
+        })
+
         it('imports a file with different bytes as a new book', async () => {
             const open = async () => makeBook()
             const first = await importBook({ file: makeFile('first bytes'), storage, open })

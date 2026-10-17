@@ -114,6 +114,25 @@ async function restoreStoredFile(options: StoredFileOptions): Promise<void> {
 }
 
 /**
+ * The result for a file that the library has already. The library keeps the file when it
+ * has none, for example for a book that the sync added with no file.
+ */
+async function keepFile({
+    storage,
+    book,
+    file,
+}: {
+    storage: ImportBookOptions['storage']
+    book: BookRecord
+    file: Blob
+}): Promise<ImportResult> {
+    await restoreStoredFile({ storage, id: book.id, file })
+    // The record of such a book changes when it gets its file.
+    const current = book.remoteOnly ? await storage.findBookByHash(book.fileHash) : book
+    return { book: current ?? book, duplicate: true }
+}
+
+/**
  * Add an EPUB file to the library. The storage gets the bytes of the file, a small cover image
  * and a small record for the library view.
  *
@@ -131,10 +150,7 @@ export async function importBook(options: ImportBookOptions): Promise<ImportResu
     report({ phase: 'hash', done: 1, total: 1 })
 
     const existing = await storage.findBookByHash(fileHash)
-    if (existing) {
-        await restoreStoredFile({ storage, id: existing.id, file: copy })
-        return { book: existing, duplicate: true }
-    }
+    if (existing) return keepFile({ storage, book: existing, file: copy })
 
     report({ phase: 'open', done: 0, total: 1 })
     const book = await open(copy)
@@ -197,10 +213,11 @@ export async function importBook(options: ImportBookOptions): Promise<ImportResu
     } catch (error) {
         // The storage refuses a second book with the same file hash. That occurs when a
         // different import of this file saved its book after the duplicate check above.
+        // The sync can also add the record of this book, with no file, during the import.
         const isRefused = (error as { name?: unknown } | null)?.name === 'ConstraintError'
         const stored = isRefused ? await storage.findBookByHash(fileHash) : undefined
         if (!stored) throw error
-        return { book: stored, duplicate: true }
+        return keepFile({ storage, book: stored, file: copy })
     }
     report({ phase: 'save', done: 1, total: 1 })
 

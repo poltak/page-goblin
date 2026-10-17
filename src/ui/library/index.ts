@@ -367,7 +367,10 @@ export function createLibraryScreen(options: LibraryScreenOptions): LibraryScree
             },
             onDuplicate(book) {
                 showToast({ message: 'This book is already in your library.' })
-                reveal(addBook(book))
+                const entry = addBook(book)
+                // A book that had no file on this device has one now.
+                if (entry.book.remoteOnly && !book.remoteOnly) void refreshBook(book.id)
+                reveal(entry)
             },
         })
     })
