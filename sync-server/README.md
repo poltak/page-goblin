@@ -1,6 +1,6 @@
 # Page Goblin sync server
 
-The sync server of [Page Goblin](https://github.com/poltak/page-goblin), an EPUB reader that runs in the browser. It is a Cloudflare Worker with one D1 database and one R2 bucket. One server holds the books, reading positions, bookmarks and highlights of one person.
+The sync server of [Page Goblin](https://github.com/poltak/page-goblin), an EPUB reader that runs in the browser. It is a Cloudflare Worker with one D1 database and one R2 bucket. One server holds the books, reading positions, bookmarks, highlights, fonts and font choice of one person.
 
 ## Deploy
 
@@ -27,6 +27,10 @@ The first deploy makes the database and the bucket. The Worker makes its tables 
 ## Connect the app
 
 In the app, open the menu, choose Sync, and enter the address of the Worker. On the first device, choose "First device" and enter the setup code. The app then shows a sync code for your other devices.
+
+## Update
+
+A server from before version 0.2.0 does not keep fonts. The app then syncs the other data and tells you to update the server. To update, get the new `sync-server/` files into your copy of the repository and deploy again. The data stays.
 
 ## API
 

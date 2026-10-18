@@ -2,7 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { handleRequest, type Env } from '../src/handler'
-import { MAX_PUSH_CHANGES } from '../src/protocol'
+import { CHANGE_KINDS, MAX_FONT_BYTES, MAX_PUSH_CHANGES } from '../src/protocol'
 import type { Change, PullResponse, PushResponse, StatusResponse } from '../src/protocol'
 import { createMemoryBucket } from './memory-bucket'
 import { createSqliteDatabase } from './sqlite-database'
@@ -85,8 +85,9 @@ describe('handleRequest', () => {
         return (await response.json()) as PushResponse
     }
 
-    async function pullChanges(since = 0, limit?: number): Promise<PullResponse> {
-        const query = limit === undefined ? `since=${since}` : `since=${since}&limit=${limit}`
+    async function pullChanges(since = 0, limit?: number, kinds?: string): Promise<PullResponse> {
+        let query = limit === undefined ? `since=${since}` : `since=${since}&limit=${limit}`
+        if (kinds !== undefined) query += `&kinds=${kinds}`
         const response = await call(`/v1/changes?${query}`)
         expect(response.status).toBe(200)
         return (await response.json()) as PullResponse
@@ -165,7 +166,10 @@ describe('handleRequest', () => {
 
             const status = await call('/v1/status')
             expect(status.status).toBe(200)
-            expect(await status.json()).toEqual({ account })
+            expect(await status.json()).toEqual({
+                account,
+                kinds: ['book', 'progress', 'bookmark', 'highlight', 'font', 'setting'],
+            })
         })
 
         it('keeps a token that is there unless the request replaces it', async () => {
@@ -293,6 +297,62 @@ describe('handleRequest', () => {
             expect(second.more).toBe(false)
         })
 
+        it('gives a pull with no list of kinds only the kinds of the first version', async () => {
+            const font = change('f1', 20, { kind: 'font' })
+            const setting = change('fontId', 30, { kind: 'setting' })
+            await pushChanges([change('one', 10), font, setting, change('two', 40)])
+
+            // An app of the first version refuses a whole pull with a kind that it does not know.
+            const old = await pullChanges()
+            expect(old.changes.map((item) => item.key)).toEqual(['one', 'two'])
+            expect(old.cursor).toBe(4)
+            expect(old.kinds).toEqual(CHANGE_KINDS)
+
+            const all = await pullChanges(0, undefined, CHANGE_KINDS.join(','))
+            expect(all.changes).toEqual([
+                { ...change('one', 10), seq: 1 },
+                { ...font, seq: 2 },
+                { ...setting, seq: 3 },
+                { ...change('two', 40), seq: 4 },
+            ])
+        })
+
+        it('gives only the kinds in the list, and ignores names that are not kinds', async () => {
+            await pushChanges([change('one', 10), change('f1', 20, { kind: 'font' })])
+
+            const fonts = await pullChanges(0, undefined, 'font,comments')
+            expect(fonts.changes.map((item) => item.key)).toEqual(['f1'])
+
+            const none = await pullChanges(0, undefined, 'comments')
+            expect(none).toMatchObject({ changes: [], cursor: 0, more: false })
+        })
+
+        it('gives pages of one kind with a cursor that moves', async () => {
+            await pushChanges([
+                change('one', 10),
+                change('f1', 20, { kind: 'font' }),
+                change('two', 30),
+                change('f2', 40, { kind: 'font' }),
+            ])
+
+            const first = await pullChanges(0, 1, 'font')
+            expect(first.changes.map((item) => item.key)).toEqual(['f1'])
+            expect(first).toMatchObject({ cursor: 2, more: true })
+            const second = await pullChanges(first.cursor, 1, 'font')
+            expect(second.changes.map((item) => item.key)).toEqual(['f2'])
+            expect(second).toMatchObject({ cursor: 4, more: false })
+        })
+
+        it('refuses a font or a setting with a key that is not a record id', async () => {
+            for (const kind of ['font', 'setting'] as const) {
+                const response = await call('/v1/changes', {
+                    method: 'POST',
+                    body: { changes: [change('not a key!', 10, { kind })] },
+                })
+                expect(response.status).toBe(400)
+            }
+        })
+
         it('refuses a change that is not valid, and writes nothing', async () => {
             const bad = [change('one', 10), { ...change('two', 10), kind: 'settings' }]
             const response = await call('/v1/changes', { method: 'POST', body: { changes: bad } })
@@ -400,8 +460,45 @@ describe('handleRequest', () => {
             expect(large.status).toBe(413)
         })
 
+        it('stores a font with its type and refuses other types', async () => {
+            const bytes = new Uint8Array([1, 2, 3])
+            const headers = { 'Content-Length': '3' }
+            const epub = await call(`/v1/fonts/${HASH}`, {
+                method: 'PUT',
+                body: bytes,
+                headers: { ...headers, 'Content-Type': 'application/epub+zip' },
+            })
+            expect(epub.status).toBe(400)
+            expect(((await epub.json()) as { error: string }).error).toContain('WOFF2')
+
+            const put = await call(`/v1/fonts/${HASH}`, {
+                method: 'PUT',
+                body: bytes,
+                headers: { ...headers, 'Content-Type': 'font/woff2' },
+            })
+            expect(put.status).toBe(204)
+            expect(bucket.keys()).toEqual([`fonts/${HASH}`])
+            const get = await call(`/v1/fonts/${HASH}`)
+            expect(get.headers.get('Content-Type')).toBe('font/woff2')
+            expect(new Uint8Array(await get.arrayBuffer())).toEqual(bytes)
+        })
+
+        it('refuses a font that is larger than its limit', async () => {
+            const large = await call(`/v1/fonts/${HASH}`, {
+                method: 'PUT',
+                body: new Uint8Array([1]),
+                headers: {
+                    'Content-Length': String(MAX_FONT_BYTES + 1),
+                    'Content-Type': 'font/ttf',
+                },
+            })
+            expect(large.status).toBe(413)
+            expect(MAX_FONT_BYTES).toBe(25 * 1024 * 1024)
+        })
+
         it('needs the token', async () => {
             expect((await call(`/v1/files/${HASH}`, { token: null })).status).toBe(401)
+            expect((await call(`/v1/fonts/${HASH}`, { token: null })).status).toBe(401)
         })
     })
 

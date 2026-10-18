@@ -119,6 +119,10 @@ function parseBook(raw: unknown, fileHash: string): SyncBookValue | null {
 /** The record of a change from the server, or null when the change is not valid. */
 export function fromChange(change: StoredChange): SyncItem | null {
     const { kind, key, updatedAt, deleted } = change
+    // The server can keep kinds that this version does not use.
+    if (kind !== 'book' && kind !== 'progress' && kind !== 'bookmark' && kind !== 'highlight') {
+        return null
+    }
     if (deleted) return { kind, key, updatedAt, deleted: true, value: null }
     // A later version of the app can write a format that this version cannot read.
     if (change.format !== DATA_FORMAT || change.data === null) return null

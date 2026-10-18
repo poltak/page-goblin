@@ -7,22 +7,51 @@
  *
  * - `GET  /v1/status`              gives `StatusResponse`.
  * - `POST /v1/setup`               takes `SetupRequest`, gives `StatusResponse`.
- * - `GET  /v1/changes?since=N`     gives `PullResponse`: the changes after sequence number N.
+ * - `GET  /v1/changes?since=N&kinds=K,K`
+ *                                  gives `PullResponse`: the changes after sequence number N, of
+ *                                  the kinds in the list. With no `kinds`, of `FIRST_KINDS`.
  * - `POST /v1/changes`             takes `PushRequest`, gives `PushResponse`.
  * - `HEAD|GET|PUT /v1/files/HASH`  the EPUB file with this SHA-256.
  * - `HEAD|GET|PUT /v1/covers/HASH` the cover of the book with this file hash.
+ * - `HEAD|GET|PUT /v1/fonts/HASH`  a font file with this SHA-256.
  *
  * An error has a JSON body `ErrorResponse`.
+ *
+ * People run their own copy of the server, and an installed app can be older than its server.
+ * So an old app must work with a new server, and a new app with an old server:
+ * - A new app sends only the kinds that the server lists in `kinds`. An old server has no
+ *   such list, and it refuses a whole push with a kind that it does not know.
+ * - An old app refuses a whole pull with a kind that it does not know. A pull with no `kinds`
+ *   parameter therefore gets only `FIRST_KINDS`.
  */
 
-export type ChangeKind = 'book' | 'progress' | 'bookmark' | 'highlight'
+export type ChangeKind = 'book' | 'progress' | 'bookmark' | 'highlight' | 'font' | 'setting'
 
-export const CHANGE_KINDS: readonly ChangeKind[] = ['book', 'progress', 'bookmark', 'highlight']
+/** The kinds that this server keeps. */
+export const CHANGE_KINDS: readonly ChangeKind[] = [
+    'book',
+    'progress',
+    'bookmark',
+    'highlight',
+    'font',
+    'setting',
+]
+
+/** The kinds of the first version. A server or a pull with no list of kinds has these. */
+export const FIRST_KINDS: readonly ChangeKind[] = ['book', 'progress', 'bookmark', 'highlight']
+
+/** A folder of files on the server. Each file has its SHA-256 or the SHA-256 of its book. */
+export type BlobFolder = 'files' | 'covers' | 'fonts'
+
+export const BLOB_FOLDERS: readonly BlobFolder[] = ['files', 'covers', 'fonts']
 
 /** One record as the app sends it. The server keeps the newest version of each record. */
 export interface Change {
     kind: ChangeKind
-    /** A file hash for 'book' and 'progress', a record id for 'bookmark' and 'highlight'. */
+    /**
+     * A file hash for 'book' and 'progress'. A record id for 'bookmark', 'highlight' and
+     * 'font', and the name of the setting for 'setting'.
+     */
     key: string
     /** The version in epoch milliseconds. A higher version wins. At the same version a delete wins. */
     updatedAt: number
@@ -41,6 +70,8 @@ export interface StoredChange extends Change {
 export interface StatusResponse {
     /** A random id that the server makes one time. A new id means that the data started again. */
     account: string
+    /** The kinds that the server keeps. A server with no list keeps `FIRST_KINDS`. */
+    kinds?: ChangeKind[]
 }
 
 export interface SetupRequest {
@@ -60,6 +91,8 @@ export interface PullResponse {
     cursor: number
     /** True when the server has more changes after `cursor`. */
     more: boolean
+    /** The kinds that the server keeps. A server with no list keeps `FIRST_KINDS`. */
+    kinds?: ChangeKind[]
 }
 
 export interface PushRequest {
@@ -101,6 +134,8 @@ export const MAX_DATA_LENGTH = 1_000_000
 /** The largest EPUB file. A Worker request has a limit of 100 MB. */
 export const MAX_FILE_BYTES = 100 * 1024 * 1024
 export const MAX_COVER_BYTES = 2 * 1024 * 1024
+/** The largest font file. A font with many CJK characters can have 20 MB. */
+export const MAX_FONT_BYTES = 25 * 1024 * 1024
 
 export const FILE_HASH = /^[0-9a-f]{64}$/
 export const RECORD_ID = /^[\w.:-]{1,128}$/
@@ -110,6 +145,19 @@ export const MAX_TIME = 8.64e15
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** The kinds in a list from a request or a response. Names that are not kinds are left out. */
+export function parseKinds(value: unknown): ChangeKind[] {
+    const names = typeof value === 'string' ? value.split(',') : Array.isArray(value) ? value : []
+    const kinds: ChangeKind[] = []
+    for (const name of names) {
+        const kind = typeof name === 'string' ? name.trim() : name
+        if (CHANGE_KINDS.includes(kind as ChangeKind) && !kinds.includes(kind as ChangeKind)) {
+            kinds.push(kind as ChangeKind)
+        }
+    }
+    return kinds
 }
 
 /** The key rule of each kind. A book and its progress use the file hash. */

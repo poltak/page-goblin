@@ -6,16 +6,21 @@
  */
 
 import {
+    CHANGE_KINDS,
     DEFAULT_PULL_CHANGES,
     FILE_HASH,
+    FIRST_KINDS,
     MAX_COVER_BYTES,
     MAX_FILE_BYTES,
+    MAX_FONT_BYTES,
     MAX_PULL_CHANGES,
     MAX_PUSH_CHANGES,
     parseChange,
+    parseKinds,
     TOKEN,
 } from './protocol'
 import type {
+    BlobFolder,
     Change,
     ErrorCode,
     ErrorResponse,
@@ -79,6 +84,12 @@ const COVER_TYPES = new Set([
     'image/avif',
     'image/bmp',
 ])
+const FONT_TYPES = new Set(['font/ttf', 'font/otf', 'font/woff', 'font/woff2'])
+const MAX_BYTES: Record<BlobFolder, number> = {
+    files: MAX_FILE_BYTES,
+    covers: MAX_COVER_BYTES,
+    fonts: MAX_FONT_BYTES,
+}
 
 const SCHEMA = [
     'CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)',
@@ -122,7 +133,11 @@ function selectRecords(db: Database, keys: readonly { kind: string; key: string 
 /** D1 allows 100 bound values in one query. */
 const KEYS_PER_SELECT = 50
 
-const SELECT_AFTER = `SELECT ${COLUMNS} FROM records WHERE seq > ?1 ORDER BY seq LIMIT ?2`
+/** The changes after a sequence number, of some kinds. The kinds are values 3 and later. */
+function selectAfter(kinds: readonly string[]): string {
+    const list = kinds.map((_, index) => `?${index + 3}`).join(', ')
+    return `SELECT ${COLUMNS} FROM records WHERE seq > ?1 AND kind IN (${list}) ORDER BY seq LIMIT ?2`
+}
 
 interface RecordRow {
     kind: string
@@ -316,18 +331,26 @@ async function pull(url: URL, db: Database): Promise<Response> {
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_PULL_CHANGES) {
         throw new HttpError(400, 'bad-request', 'The value of limit is not valid.')
     }
+    // An app of the first version refuses a pull with a kind that it does not know. It sends
+    // no list. A newer app can ask for kinds that this server does not know.
+    const asked = url.searchParams.get('kinds')
+    const kinds = asked === null ? FIRST_KINDS : parseKinds(asked)
     const account = await accountOf(db)
     // One row more than the limit tells if more rows follow.
-    const { results } = await db
-        .prepare(SELECT_AFTER)
-        .bind(since, limit + 1)
-        .all<RecordRow>()
+    const { results } =
+        kinds.length === 0
+            ? { results: [] }
+            : await db
+                  .prepare(selectAfter(kinds))
+                  .bind(since, limit + 1, ...kinds)
+                  .all<RecordRow>()
     const changes = results.slice(0, limit).map(toChange)
     const response: PullResponse = {
         account,
         changes,
         cursor: changes.at(-1)?.seq ?? since,
         more: results.length > limit,
+        kinds: [...CHANGE_KINDS],
     }
     return json(response)
 }
@@ -377,31 +400,41 @@ async function push(request: Request, db: Database): Promise<Response> {
     return json(response)
 }
 
+/** The type to store for a file, or null when the folder does not take that type. */
+function blobType(folder: BlobFolder, given: string): string | null {
+    if (folder === 'files') return 'application/epub+zip'
+    if (folder === 'covers') return COVER_TYPES.has(given) ? given : null
+    return FONT_TYPES.has(given) ? given : null
+}
+
 async function blob(
     request: Request,
     env: Env,
-    { folder, hash }: { folder: 'files' | 'covers'; hash: string },
+    { folder, hash }: { folder: BlobFolder; hash: string },
 ): Promise<Response> {
     if (!FILE_HASH.test(hash)) throw new HttpError(400, 'bad-request', 'The hash is not valid.')
     const key = `${folder}/${hash}`
 
     if (request.method === 'PUT') {
         const length = Number(request.headers.get('Content-Length') ?? '')
-        const max = folder === 'files' ? MAX_FILE_BYTES : MAX_COVER_BYTES
         if (!Number.isSafeInteger(length) || length < 1) {
             throw new HttpError(400, 'bad-request', 'The request needs a Content-Length.')
         }
-        if (length > max) throw new HttpError(413, 'too-large', 'The file is too large.')
+        if (length > MAX_BYTES[folder]) {
+            throw new HttpError(413, 'too-large', 'The file is too large.')
+        }
         const type = (request.headers.get('Content-Type') ?? '').split(';')[0].trim().toLowerCase()
-        if (folder === 'covers' && !COVER_TYPES.has(type)) {
+        const contentType = blobType(folder, type)
+        if (!contentType) {
             throw new HttpError(
                 400,
                 'bad-request',
-                'A cover must be a JPEG, PNG, WebP, GIF, AVIF or BMP image.',
+                folder === 'covers'
+                    ? 'A cover must be a JPEG, PNG, WebP, GIF, AVIF or BMP image.'
+                    : 'A font must be a TTF, OTF, WOFF or WOFF2 file.',
             )
         }
         if (!request.body) throw new HttpError(400, 'bad-request', 'The request has no body.')
-        const contentType = folder === 'files' ? 'application/epub+zip' : type
         await env.BUCKET.put(key, request.body, { httpMetadata: { contentType } })
         return new Response(null, { status: 204 })
     }
@@ -434,7 +467,7 @@ async function route(request: Request, env: Env): Promise<Response> {
 
     if (pathname === '/v1/setup' && method === 'POST') return setup(request, env)
 
-    const blobMatch = /^\/v1\/(files|covers)\/([^/]+)$/.exec(pathname)
+    const blobMatch = /^\/v1\/(files|covers|fonts)\/([^/]+)$/.exec(pathname)
     const isRoute =
         (pathname === '/v1/status' && method === 'GET') ||
         (pathname === '/v1/changes' && (method === 'GET' || method === 'POST')) ||
@@ -444,14 +477,17 @@ async function route(request: Request, env: Env): Promise<Response> {
     await requireToken(request, env.DB)
 
     if (pathname === '/v1/status') {
-        const response: StatusResponse = { account: await accountOf(env.DB) }
+        const response: StatusResponse = {
+            account: await accountOf(env.DB),
+            kinds: [...CHANGE_KINDS],
+        }
         return json(response)
     }
     if (pathname === '/v1/changes') {
         return method === 'GET' ? pull(url, env.DB) : push(request, env.DB)
     }
     return blob(request, env, {
-        folder: blobMatch![1] as 'files' | 'covers',
+        folder: blobMatch![1] as BlobFolder,
         hash: blobMatch![2],
     })
 }
