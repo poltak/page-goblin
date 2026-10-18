@@ -4,6 +4,7 @@
  * use. With the sync off, it loads nothing.
  */
 
+import type { SettingsStore } from '$lib/settings/store'
 import type { LibraryFileStorage } from '$lib/storage/library-storage'
 import type { ApplyResult } from '$lib/storage/sync-store'
 import type { BookRecord, ChangeTracker } from '$lib/storage/types'
@@ -18,6 +19,11 @@ import type { SyncDialog } from './dialog'
 export interface SyncHostOptions {
     /** A sync changed the library of this device. */
     onChanges(changes: ApplyResult): void
+    /**
+     * The settings of the app. The font choice syncs: the host sends a change of it, and
+     * writes the font choice of a different device. Without it, no setting syncs.
+     */
+    settings?: SettingsStore
 }
 
 export interface SyncHost {
@@ -57,6 +63,21 @@ export function createSyncHost(options: SyncHostOptions): SyncHost {
     /** The code of the last error that showed a toast. The same error shows it one time only. */
     let toastedCode: string | null = null
 
+    /** Writes the settings that a different device changed, then tells the app. */
+    function onChanges(changes: ApplyResult): void {
+        const fontId = changes.settings?.fontId
+        // The storage has this value as its copy, so the change does not go back out.
+        if (fontId !== undefined) options.settings?.update({ fontId })
+        options.onChanges(changes)
+    }
+
+    options.settings?.subscribe((next, previous) => {
+        if (!current || !storage || next.fontId === previous.fontId) return
+        storage
+            .putSyncedSetting({ name: 'fontId', value: next.fontId })
+            .catch((error: unknown) => console.error(error))
+    })
+
     function setStatus(next: SyncStatus): void {
         status = next
         for (const listener of listeners) {
@@ -87,7 +108,7 @@ export function createSyncHost(options: SyncHostOptions): SyncHost {
                 createSyncController({
                     storage: target,
                     config,
-                    onChanges: options.onChanges,
+                    onChanges,
                     onStatus: setStatus,
                 }),
             )

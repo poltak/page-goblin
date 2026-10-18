@@ -27,6 +27,7 @@ if ('scrollRestoration' in history) history.scrollRestoration = 'manual'
 
 // With the sync off, the sync host loads no sync code and the storage writes no outbox.
 const sync = createSyncHost({
+    settings,
     onChanges(changes) {
         void library.applySyncChanges(changes.books)
         for (const progress of changes.progress) readerHost.offerPosition(progress)

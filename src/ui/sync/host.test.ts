@@ -1,6 +1,7 @@
 import { Blob as NodeBlob } from 'node:buffer'
 import { IDBFactory } from 'fake-indexeddb'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createSettingsStore } from '$lib/settings/store'
 import { createLibraryStorage, type LibraryFileStorage } from '$lib/storage/library-storage'
 import type { BookRecord } from '$lib/storage/types'
 import { readSyncConfig, SYNC_STORAGE_KEY } from '$lib/sync/config'
@@ -152,6 +153,34 @@ describe('createSyncHost', () => {
             annotations: [],
             fonts: true,
         })
+    })
+
+    it('sends a new font choice and writes the font choice of a different device', async () => {
+        const settings = createSettingsStore({ storage: null })
+        const onChanges = vi.fn()
+        const host = createSyncHost({ onChanges, settings })
+        host.connectStorage(storage)
+        const put = vi.spyOn(storage, 'putSyncedSetting')
+
+        settings.update({ fontId: 'inter' })
+        expect(put).not.toHaveBeenCalled()
+
+        await host.turnOn(CONFIG)
+        settings.update({ fontSize: 30 })
+        settings.update({ fontId: 'lora' })
+        expect(put.mock.calls).toEqual([[{ name: 'fontId', value: 'lora' }]])
+
+        await vi.waitFor(() => expect(mocks.created).toHaveLength(1))
+        const changes = {
+            books: [],
+            progress: [],
+            annotations: [],
+            settings: { fontId: 'user:f' },
+        }
+        ;(mocks.created[0] as unknown as SyncControllerOptions).onChanges(changes)
+        expect(settings.get().fontId).toBe('user:f')
+        expect(onChanges).toHaveBeenCalledWith(changes)
+        settings.destroy()
     })
 
     it('shows one toast for a wrong sync code, and tells the status listeners', async () => {

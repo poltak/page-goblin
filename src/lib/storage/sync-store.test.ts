@@ -492,7 +492,13 @@ describe('createSyncStore', () => {
                 ],
             })
 
-            expect(result).toEqual({ books: [], progress: [], annotations: [], fonts: false })
+            expect(result).toEqual({
+                books: [],
+                progress: [],
+                annotations: [],
+                fonts: false,
+                settings: {},
+            })
             expect(await storage.getProgress('a')).toEqual(makeProgress('a', 3000))
         })
 
@@ -671,6 +677,44 @@ describe('createSyncStore', () => {
             expect(await storage.listFonts()).toEqual([makeFont('f', ['r'])])
             expect(await fontFileKeys()).toEqual(['r'])
             expect(await sync.missingFontFiles()).toEqual([])
+        })
+    })
+
+    describe('settings', () => {
+        function setting(value: string, updatedAt: number): SyncItem {
+            return { kind: 'setting', key: 'fontId', updatedAt, deleted: false, value: { value } }
+        }
+
+        it('sends the copy of a changed setting', async () => {
+            syncOn = true
+            await storage.putSyncedSetting({ name: 'fontId', value: 'literata' })
+
+            const batch = await sync.readOutbox(10)
+            expect(batch.changes.map(({ item }) => item)).toEqual([setting('literata', 9000)])
+            expect(await sync.readOutbox(10, FIRST_SYNC_KINDS)).toMatchObject({ changes: [] })
+        })
+
+        it('gives a newer setting from the server to the app, one time', async () => {
+            const first = await sync.applyRemote({ items: [setting('user:f', 5000)] })
+            expect(first.settings).toEqual({ fontId: 'user:f' })
+
+            const same = await sync.applyRemote({ items: [setting('user:f', 6000)] })
+            expect(same.settings).toEqual({})
+            const older = await sync.applyRemote({ items: [setting('inter', 5500)] })
+            expect(older.settings).toEqual({})
+
+            // The value from the server is the copy now, so the app does not send it back.
+            syncOn = true
+            await storage.putSyncedSetting({ name: 'fontId', value: 'user:f' })
+            expect(await readOutbox()).toEqual([])
+        })
+
+        it('keeps a newer change of this device', async () => {
+            syncOn = true
+            await storage.putSyncedSetting({ name: 'fontId', value: 'literata' })
+            const result = await sync.applyRemote({ items: [setting('inter', 8000)] })
+            expect(result.settings).toEqual({})
+            expect((await sync.readOutbox(10)).changes[0].item).toEqual(setting('literata', 9000))
         })
     })
 

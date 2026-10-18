@@ -739,6 +739,56 @@ describe('createLibraryStorage', () => {
         })
     })
 
+    describe('settings that sync', () => {
+        function readAll(): Promise<{ outbox: OutboxEntry[]; copy: unknown }> {
+            return storage.database.run({
+                stores: ['outbox', 'syncState'],
+                mode: 'readonly',
+                failureMessage: 'Unable to read.',
+                work: (transaction) => {
+                    const outbox = transaction.objectStore('outbox').getAll()
+                    const copy = transaction.objectStore('syncState').get('setting:fontId')
+                    return () => ({ outbox: outbox.result as OutboxEntry[], copy: copy.result })
+                },
+            })
+        }
+
+        it('keeps a copy and an outbox entry while the sync is on', async () => {
+            let time = 9000
+            storage.close()
+            storage = createLibraryStorage({
+                indexedDB: tracked.factory,
+                changes: { isOn: () => true, onChange: () => {} },
+                now: () => time,
+            })
+
+            await storage.putSyncedSetting({ name: 'fontId', value: 'user:f' })
+            expect(await readAll()).toEqual({
+                outbox: [
+                    {
+                        id: 'setting:fontId',
+                        kind: 'setting',
+                        key: 'fontId',
+                        deleted: false,
+                        changedAt: 9000,
+                    },
+                ],
+                copy: { value: 'user:f', updatedAt: 9000 },
+            })
+
+            // The same value, for example from the server or from a different tab.
+            time = 9500
+            await storage.putSyncedSetting({ name: 'fontId', value: 'user:f' })
+            expect((await readAll()).copy).toEqual({ value: 'user:f', updatedAt: 9000 })
+        })
+
+        it('writes nothing while the sync is off', async () => {
+            await storage.putSyncedSetting({ name: 'fontId', value: 'user:f' })
+            expect(tracked.transactions).toEqual([])
+            expect(await readAll()).toEqual({ outbox: [], copy: undefined })
+        })
+    })
+
     describe('font changes for the sync', () => {
         it('writes the family and its new files to the outbox, and a delete', async () => {
             storage.close()

@@ -194,6 +194,12 @@ function parseFont(raw: Record<string, unknown>): SyncFontValue | null {
     }
 }
 
+/** The settings that sync. A different name from the server is not a setting of the app. */
+export const SYNCED_SETTINGS: readonly string[] = ['fontId']
+
+/** A font id is short. A font of a book has its family name in the id. */
+const MAX_SETTING_LENGTH = 300
+
 /** The record of a change from the server, or null when the change is not valid. */
 export function fromChange(change: StoredChange): SyncItem | null {
     const { kind, key, updatedAt, deleted } = change
@@ -203,11 +209,13 @@ export function fromChange(change: StoredChange): SyncItem | null {
         kind !== 'progress' &&
         kind !== 'bookmark' &&
         kind !== 'highlight' &&
-        kind !== 'font'
+        kind !== 'font' &&
+        kind !== 'setting'
     ) {
         return null
     }
     if (kind === 'font' && !FONT_ID.test(key)) return null
+    if (kind === 'setting' && !SYNCED_SETTINGS.includes(key)) return null
     if (deleted) return { kind, key, updatedAt, deleted: true, value: null }
     // A later version of the app can write a format that this version cannot read.
     if (change.format !== DATA_FORMAT || change.data === null) return null
@@ -227,6 +235,14 @@ export function fromChange(change: StoredChange): SyncItem | null {
     if (kind === 'font') {
         const value = parseFont(raw)
         return value && { kind, key, updatedAt, deleted: false, value }
+    }
+    if (kind === 'setting') {
+        // The settings store checks the value again, as it does with the saved settings.
+        const { value } = raw
+        if (typeof value !== 'string' || value === '' || value.length > MAX_SETTING_LENGTH) {
+            return null
+        }
+        return { kind, key, updatedAt, deleted: false, value: { value } }
     }
 
     const { fileHash } = raw

@@ -7,7 +7,7 @@
 
 import { createId } from './crypto'
 import type { Database, StoreName } from './db'
-import { outboxEntry, removeUnusedFontFiles, withFile } from './library-storage'
+import { outboxEntry, removeUnusedFontFiles, syncedSettingKey, withFile } from './library-storage'
 import type {
     BookmarkRecord,
     BookRecord,
@@ -16,6 +16,8 @@ import type {
     OutboxEntry,
     ProgressRecord,
     SyncBookValue,
+    SyncedSetting,
+    SyncedSettingName,
     SyncFontValue,
     SyncItem,
     SyncRecordKind,
@@ -37,6 +39,7 @@ const KIND_ORDER: Record<OutboxEntry['kind'], number> = {
     highlight: 4,
     font: 5,
     fontFile: 6,
+    setting: 7,
 }
 
 /** The kinds of outbox entry that are uploads of files and not records. */
@@ -76,6 +79,8 @@ export interface ApplyResult {
     annotations: string[]
     /** True when a font family or a font file changed. */
     fonts?: boolean
+    /** The settings that a different device changed. The app writes them to its settings. */
+    settings?: Partial<Record<SyncedSettingName, string>>
 }
 
 export interface ApplyRemoteOptions {
@@ -308,6 +313,11 @@ export function createSyncStore(database: Database): SyncStore {
                     transaction.objectStore('fonts').get(key),
                 )
                 if (font) item = liveItem(kind, key, updatedAt, syncFont(font))
+            } else if (kind === 'setting') {
+                const copy = await resultOf<SyncedSetting | undefined>(
+                    transaction.objectStore('syncState').get(syncedSettingKey(key)),
+                )
+                if (copy) item = liveItem(kind, key, updatedAt, { value: copy.value })
             } else if (kind === 'progress') {
                 const book = await books.find(key)
                 const progress = book
@@ -352,6 +362,7 @@ export function createSyncStore(database: Database): SyncStore {
         const annotations = new Set<string>()
         const progress: ProgressRecord[] = []
         let fonts = false
+        const settings: Partial<Record<SyncedSettingName, string>> = {}
 
         for (const item of [...items].sort(byKind)) {
             const pendingId = `${item.kind}:${item.key}`
@@ -389,6 +400,21 @@ export function createSyncStore(database: Database): SyncStore {
                     booksStore.add(record)
                     books.set(item.key, record)
                     changedBooks.add(record.id)
+                }
+                continue
+            }
+
+            if (item.kind === 'setting') {
+                // A setting has no delete. Each device always has a value.
+                if (item.deleted) continue
+                const state = transaction.objectStore('syncState')
+                const key = syncedSettingKey(item.key)
+                const copy = await resultOf<SyncedSetting | undefined>(state.get(key))
+                if (copy && copy.updatedAt >= item.updatedAt) continue
+                const next: SyncedSetting = { value: item.value.value, updatedAt: item.updatedAt }
+                state.put(next, key)
+                if (copy?.value !== next.value) {
+                    settings[item.key as SyncedSettingName] = next.value
                 }
                 continue
             }
@@ -457,7 +483,13 @@ export function createSyncStore(database: Database): SyncStore {
         }
 
         if (state) transaction.objectStore('syncState').put(state, STATE_KEY)
-        return { books: [...changedBooks], progress, annotations: [...annotations], fonts }
+        return {
+            books: [...changedBooks],
+            progress,
+            annotations: [...annotations],
+            fonts,
+            settings,
+        }
     }
 
     return {
@@ -549,6 +581,7 @@ export function createSyncStore(database: Database): SyncStore {
                     'highlights',
                     'fonts',
                     'fontFiles',
+                    'syncState',
                 ],
                 mode: 'readonly',
                 failureMessage: 'Unable to read the changes for the sync.',

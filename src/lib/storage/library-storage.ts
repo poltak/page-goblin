@@ -9,6 +9,7 @@ import type {
     LibraryStorage,
     OutboxEntry,
     ProgressRecord,
+    SyncedSetting,
 } from './types'
 
 export interface LibraryStorageOptions extends DatabaseOptions {
@@ -58,6 +59,11 @@ export function outboxEntry(
 
 /** Fields of a book record that a change of does not sync. */
 const LOCAL_FIELDS = new Set<string>(['lastOpenedAt', 'remoteOnly'])
+
+/** The key of the copy of a setting that syncs, in the `syncState` store. */
+export function syncedSettingKey(name: string): string {
+    return `setting:${name}`
+}
 
 /** The record without the field that is true only on a device that has no file. */
 export function withFile(book: BookRecord): BookRecord {
@@ -502,6 +508,30 @@ export function createLibraryStorage(options: LibraryStorageOptions = {}): Libra
                 },
             })
             return afterTracked(tracked, written)
+        },
+
+        putSyncedSetting: ({ name, value }) => {
+            if (!tracking()) return Promise.resolve()
+            const written = database.run({
+                stores: ['syncState', 'outbox'],
+                mode: 'readwrite',
+                failureMessage: 'Unable to save the setting for the sync.',
+                work: (transaction) => {
+                    const state = transaction.objectStore('syncState')
+                    const key = syncedSettingKey(name)
+                    const current = state.get(key)
+                    current.onsuccess = () => {
+                        if ((current.result as SyncedSetting | undefined)?.value === value) return
+                        const changedAt = now()
+                        const copy: SyncedSetting = { value, updatedAt: changedAt }
+                        state.put(copy, key)
+                        transaction
+                            .objectStore('outbox')
+                            .put(outboxEntry('setting', name, { deleted: false, changedAt }))
+                    }
+                },
+            })
+            return afterTracked(true, written)
         },
 
         close: () => database.close(),

@@ -659,6 +659,46 @@ describe('createSyncEngine', () => {
         })
     })
 
+    describe('the font choice', () => {
+        async function outboxOf(device: Device) {
+            return (await createSyncStore(device.storage.database).readOutbox(10)).changes
+        }
+
+        it('goes to a new device, and does not come back from it', async () => {
+            const phone = createDevice()
+            await phone.engine.sync()
+            await phone.storage.putSyncedSetting({ name: 'fontId', value: 'user:f-1' })
+            await phone.engine.sync()
+
+            const laptop = createDevice()
+            await laptop.engine.sync()
+
+            expect(laptop.changes.map((change) => change.settings?.fontId)).toContain('user:f-1')
+            // The app writes the value to its settings. That write sends nothing.
+            await laptop.storage.putSyncedSetting({ name: 'fontId', value: 'user:f-1' })
+            expect(await outboxOf(laptop)).toEqual([])
+        })
+
+        it('lets the later of two choices win on both devices', async () => {
+            const phone = createDevice()
+            const laptop = createDevice()
+            await phone.engine.sync()
+            await laptop.engine.sync()
+
+            await phone.storage.putSyncedSetting({ name: 'fontId', value: 'literata' })
+            laptop.clock.now = 20_000
+            await laptop.storage.putSyncedSetting({ name: 'fontId', value: 'inter' })
+            await laptop.engine.sync()
+            phone.changes.length = 0
+            await phone.engine.sync()
+            laptop.changes.length = 0
+            await laptop.engine.sync()
+
+            expect(phone.changes.map((change) => change.settings?.fontId)).toContain('inter')
+            expect(laptop.changes.some((change) => change.settings?.fontId)).toBe(false)
+        })
+    })
+
     it('runs one more time for a call during a run', async () => {
         const phone = createDevice()
         await addBook(phone, 'a', 'epub bytes of a')

@@ -121,6 +121,13 @@ describe('records', () => {
             { kind: 'highlight', key: 'h2', updatedAt: 5000, deleted: true, value: null },
             { kind: 'font', key: 'f-1', updatedAt: 2000, deleted: false, value: font() },
             { kind: 'font', key: 'f-2', updatedAt: 6000, deleted: true, value: null },
+            {
+                kind: 'setting',
+                key: 'fontId',
+                updatedAt: 7000,
+                deleted: false,
+                value: { value: 'user:f-1' },
+            },
         ]
         for (const item of items) expect(fromChange(stored(item))).toEqual(item)
     })
@@ -209,9 +216,17 @@ describe('records', () => {
         expect(value).toEqual(font())
     })
 
-    it('skips a kind that this version does not use', () => {
-        const change = { ...fontChange(font()), kind: 'setting' as const, key: 'fontId' }
-        expect(fromChange(change)).toBeNull()
+    it('drops a setting that the app does not sync, and a value that is not valid', () => {
+        const setting = (key: string, value: unknown): StoredChange => ({
+            ...fontChange({ value }),
+            kind: 'setting',
+            key,
+        })
+        expect(fromChange(setting('fontId', 'literata'))?.value).toEqual({ value: 'literata' })
+        expect(fromChange(setting('theme', 'dark'))).toBeNull()
+        expect(fromChange(setting('fontId', 5))).toBeNull()
+        expect(fromChange(setting('fontId', ''))).toBeNull()
+        expect(fromChange(setting('fontId', 'x'.repeat(301)))).toBeNull()
     })
 
     it('has the same font size limit as the server', () => {

@@ -9,7 +9,8 @@
  * - `bookmarks`  key `id`, index `bookId`.
  * - `highlights` key `id`, index `bookId`.
  * - `outbox`     key `id`. The changes that the sync did not send yet. See `OutboxEntry`.
- * - `syncState`  out-of-line keys. The state of the sync, for example its cursor.
+ * - `syncState`  out-of-line keys. The state of the sync: its cursor at key `state`, and the
+ *                copy of each setting that syncs at key `setting:` + the name of the setting.
  * - `fonts`      key `id`. One record for each font family that the user added.
  * - `fontFiles`  key = SHA-256 of the file. The font files as Blobs. Families share a file.
  */
@@ -140,7 +141,20 @@ export interface NewFont {
 }
 
 /** A kind of record that the sync copies between devices. */
-export type SyncRecordKind = 'book' | 'progress' | 'bookmark' | 'highlight' | 'font'
+export type SyncRecordKind = 'book' | 'progress' | 'bookmark' | 'highlight' | 'font' | 'setting'
+
+/** The settings that sync. The other settings stay on each device. */
+export type SyncedSettingName = 'fontId'
+
+/**
+ * The copy of a setting that syncs, in the `syncState` store. The settings themselves are in
+ * localStorage. The copy has the time of the last change, so the newer change wins.
+ */
+export interface SyncedSetting {
+    value: string
+    /** Epoch milliseconds. */
+    updatedAt: number
+}
 
 /**
  * One change on this device that the sync did not send yet. The storage writes it in the same
@@ -176,6 +190,10 @@ export type SyncBookmarkValue = Omit<BookmarkRecord, 'bookId'> & { fileHash: str
 export type SyncHighlightValue = Omit<HighlightRecord, 'bookId'> & { fileHash: string }
 /** A font family has the same id on all devices. The key of the change is that id. */
 export type SyncFontValue = Omit<FontRecord, 'id'>
+/** The key of the change is the name of the setting. */
+export interface SyncSettingValue {
+    value: string
+}
 
 export interface SyncValues {
     book: SyncBookValue
@@ -183,6 +201,7 @@ export interface SyncValues {
     bookmark: SyncBookmarkValue
     highlight: SyncHighlightValue
     font: SyncFontValue
+    setting: SyncSettingValue
 }
 
 /** A record as the sync sends and receives it. `key` is the key of `OutboxEntry`. */
@@ -264,6 +283,13 @@ export interface LibraryStorage {
     putFont(font: NewFont): Promise<void>
     /** Removes the family, and the files that no other family uses. */
     deleteFont(id: string): Promise<void>
+
+    /**
+     * Keeps a copy of a setting that syncs and puts it in the outbox, in one transaction. Does
+     * nothing while the sync is off, and for the value that the copy has already. So a value
+     * from the server, or from a different tab, does not go back to the server.
+     */
+    putSyncedSetting(setting: { name: SyncedSettingName; value: string }): Promise<void>
 
     /** Close the connection. The next call opens it again. */
     close(): void

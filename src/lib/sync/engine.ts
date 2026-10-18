@@ -44,6 +44,7 @@ export const APP_KINDS: readonly SyncRecordKind[] = [
     'bookmark',
     'highlight',
     'font',
+    'setting',
 ]
 /** Errors that stop the run. With other errors, a file or a cover waits for the next run. */
 const STOP_CODES = new Set(['offline', 'unauthorized', 'not-set-up'])
@@ -81,7 +82,12 @@ function emptyChanges(): ApplyResult {
 }
 
 function hasChanges(changes: ApplyResult): boolean {
-    return changes.books.length > 0 || changes.annotations.length > 0 || changes.fonts === true
+    return (
+        changes.books.length > 0 ||
+        changes.annotations.length > 0 ||
+        changes.fonts === true ||
+        Object.keys(changes.settings ?? {}).length > 0
+    )
 }
 
 function merge(target: ApplyResult, more: ApplyResult): void {
@@ -91,6 +97,7 @@ function merge(target: ApplyResult, more: ApplyResult): void {
     }
     target.progress.push(...more.progress)
     if (more.fonts) target.fonts = true
+    if (more.settings) target.settings = { ...target.settings, ...more.settings }
 }
 
 /** The kinds that the cursor of the state covers. */
