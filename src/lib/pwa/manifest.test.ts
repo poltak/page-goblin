@@ -21,11 +21,14 @@ describe('web app manifest', () => {
             name: 'Page Goblin',
             short_name: 'Page Goblin',
             // Android hides its status bar and its navigation bar for this mode. A page
-            // cannot hide them or set the colour of the navigation bar for each theme. iOS
-            // and the desktop browsers show the app as a standalone app.
+            // cannot hide them. iOS and the desktop browsers show the app as a standalone app.
             display: 'fullscreen',
             background_color: '#fbfaf8',
-            theme_color: '#fbfaf8',
+            // Chrome on Android paints the navigation bar with this colour when the installed
+            // app starts. The theme-color tag of the page changes only the status bar, so the
+            // bar cannot follow the theme. Black looks right below the dark themes and uses
+            // no power on an OLED screen.
+            theme_color: '#000000',
             lang: 'en',
             dir: 'ltr',
             categories: ['books', 'education'],

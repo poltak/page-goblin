@@ -6,7 +6,7 @@
     "scope": "./",
     "display": "fullscreen",
     "background_color": "#fbfaf8",
-    "theme_color": "#fbfaf8",
+    "theme_color": "#000000",
     "lang": "en",
     "dir": "ltr",
     "categories": ["books", "education"],
