@@ -574,17 +574,33 @@ describe('createSyncStore', () => {
             })
         }
 
-        it('reads a font and its files from the outbox, after the other records', async () => {
+        it('reads a font after the other records, when its files are uploaded', async () => {
             syncOn = true
             await putFont(makeFont('f', ['r', 'i']), 'r', 'i')
             await addBook('a')
 
-            const batch = await sync.readOutbox(10)
+            // A different device that gets the family must find its files on the server.
+            const waiting = await sync.readOutbox(10)
+            expect(waiting.changes.map(({ item }) => item.kind)).toEqual(['book'])
+            expect(waiting.fontFiles.map((entry) => entry.key).sort()).toEqual(['i', 'r'])
+            expect(waiting.stale).toEqual([])
 
+            await sync.removeOutbox(waiting.fontFiles)
+            const batch = await sync.readOutbox(10)
             expect(batch.changes.map(({ item }) => item.kind)).toEqual(['book', 'font'])
             expect(batch.changes[1].item).toEqual(fontItem(makeFont('f', ['r', 'i'])))
-            expect(batch.fontFiles.map((entry) => entry.key).sort()).toEqual(['i', 'r'])
-            expect(batch.stale).toEqual([])
+        })
+
+        it('gives the font files even when many book files wait', async () => {
+            syncOn = true
+            await addBook('a', { addedAt: 100 })
+            await addBook('b', { addedAt: 200 })
+            await putFont(makeFont('f', ['r']), 'r')
+
+            const batch = await sync.readOutbox(1)
+
+            expect(batch.files).toHaveLength(1)
+            expect(batch.fontFiles.map((entry) => entry.key)).toEqual(['r'])
         })
 
         it('leaves the font entries for a server that does not keep fonts', async () => {
@@ -668,15 +684,36 @@ describe('createSyncStore', () => {
             ])
         })
 
-        it('removes the fonts that do not have all their files at reset', async () => {
+        it('keeps the faces that are here at reset, and removes a font with none', async () => {
             await putFont(makeFont('f', ['r']), 'r')
-            await sync.applyRemote({ items: [fontItem(makeFont('g', ['r', 'missing']))] })
+            await sync.applyRemote({
+                items: [
+                    fontItem(makeFont('g', ['r', 'missing'])),
+                    fontItem(makeFont('h', ['gone'])),
+                ],
+            })
 
             await sync.reset()
 
-            expect(await storage.listFonts()).toEqual([makeFont('f', ['r'])])
+            expect(await storage.listFonts()).toEqual([makeFont('f', ['r']), makeFont('g', ['r'])])
             expect(await fontFileKeys()).toEqual(['r'])
             expect(await sync.missingFontFiles()).toEqual([])
+        })
+
+        it('keeps a file that a family later in the same pull uses', async () => {
+            await putFont(makeFont('f', ['shared']), 'shared')
+
+            await sync.applyRemote({
+                items: [
+                    { kind: 'font', key: 'f', updatedAt: 800, deleted: true, value: null },
+                    fontItem(makeFont('g', ['shared'], { updatedAt: 900 })),
+                ],
+            })
+
+            expect(await fontFileKeys()).toEqual(['shared'])
+            expect(await storage.listFonts()).toEqual([
+                makeFont('g', ['shared'], { updatedAt: 900 }),
+            ])
         })
     })
 
@@ -707,6 +744,19 @@ describe('createSyncStore', () => {
             syncOn = true
             await storage.putSyncedSetting({ name: 'fontId', value: 'user:f' })
             expect(await readOutbox()).toEqual([])
+        })
+
+        it('sends a waiting change after the sync is off and on again', async () => {
+            syncOn = true
+            await storage.putSyncedSetting({ name: 'fontId', value: 'literata' })
+            await sync.writeState({ account: 'acc', cursor: 3 })
+
+            await sync.reset()
+
+            expect(await sync.readState()).toBeUndefined()
+            expect((await sync.readOutbox(10)).changes.map(({ item }) => item)).toEqual([
+                setting('literata', 9000),
+            ])
         })
 
         it('keeps a newer change of this device', async () => {

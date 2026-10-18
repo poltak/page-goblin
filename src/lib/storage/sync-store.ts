@@ -122,9 +122,10 @@ export interface SyncStore {
      */
     removeDownload(bookId: string): Promise<boolean>
     /**
-     * Ends the sync on this device: removes the state, the books that have no file here and
-     * the font families that do not have all their files here. The outbox stays. Resolves
-     * with the ids of the removed books.
+     * Ends the sync on this device: removes the state and the books that have no file here.
+     * A font family keeps only the faces whose files are here, and a family with none goes.
+     * The outbox and the copies of the settings stay. Resolves with the ids of the removed
+     * books.
      */
     reset(): Promise<string[]>
 }
@@ -273,13 +274,20 @@ export function createSyncStore(database: Database): SyncStore {
         const all = (await resultOf<OutboxEntry[]>(outbox.getAll())).filter(
             (entry) => !kinds || kinds.includes(recordKindOf(entry.kind)),
         )
-        // Records and files have their own limit, so many waiting uploads cannot hold back a
-        // reading position. The file that waited longest comes first.
+        // Records, book files and font files each have their own limit, so many waiting
+        // uploads cannot hold back a reading position or a font. The file that waited longest
+        // comes first.
         const records = all.filter((entry) => !UPLOAD_KINDS.has(entry.kind)).sort(byKind)
-        const uploads = all
-            .filter((entry) => UPLOAD_KINDS.has(entry.kind))
-            .sort((a, b) => a.changedAt - b.changedAt)
-        const entries = [...records.slice(0, limit), ...uploads.slice(0, limit)]
+        const uploadsOf = (kind: OutboxEntry['kind']) =>
+            all
+                .filter((entry) => entry.kind === kind)
+                .sort((a, b) => a.changedAt - b.changedAt)
+                .slice(0, limit)
+        const entries = [...records.slice(0, limit), ...uploadsOf('file'), ...uploadsOf('fontFile')]
+        /** The font files that wait for their upload. */
+        const waitingFiles = new Set(
+            all.filter((entry) => entry.kind === 'fontFile').map((entry) => entry.key),
+        )
         const batch: OutboxBatch = { changes: [], files: [], fontFiles: [], stale: [] }
 
         for (const entry of entries) {
@@ -312,6 +320,9 @@ export function createSyncStore(database: Database): SyncStore {
                 const font = await resultOf<FontRecord | undefined>(
                     transaction.objectStore('fonts').get(key),
                 )
+                // A different device that gets the family must find its files on the server.
+                // The family waits in the outbox until its uploads are done.
+                if (font?.faces.some((face) => waitingFiles.has(face.hash))) continue
                 if (font) item = liveItem(kind, key, updatedAt, syncFont(font))
             } else if (kind === 'setting') {
                 const copy = await resultOf<SyncedSetting | undefined>(
@@ -362,6 +373,8 @@ export function createSyncStore(database: Database): SyncStore {
         const annotations = new Set<string>()
         const progress: ProgressRecord[] = []
         let fonts = false
+        /** The font files of families that changed. Each one that no family uses goes. */
+        const oldFontFiles = new Set<string>()
         const settings: Partial<Record<SyncedSettingName, string>> = {}
 
         for (const item of [...items].sort(byKind)) {
@@ -431,12 +444,7 @@ export function createSyncStore(database: Database): SyncStore {
                     if (JSON.stringify(record) === JSON.stringify(current)) continue
                     store.put(record)
                 }
-                // The files of the faces that the family does not have now.
-                if (current)
-                    removeUnusedFontFiles(
-                        transaction,
-                        current.faces.map((f) => f.hash),
-                    )
+                for (const face of current?.faces ?? []) oldFontFiles.add(face.hash)
                 fonts = true
                 continue
             }
@@ -482,6 +490,8 @@ export function createSyncStore(database: Database): SyncStore {
             annotations.add(book.id)
         }
 
+        // After all writes, so a family later in the same pull keeps a file that it uses.
+        if (oldFontFiles.size > 0) removeUnusedFontFiles(transaction, oldFontFiles)
         if (state) transaction.objectStore('syncState').put(state, STATE_KEY)
         return {
             books: [...changedBooks],
@@ -733,8 +743,9 @@ export function createSyncStore(database: Database): SyncStore {
                 failureMessage: 'Unable to stop the sync.',
                 body: async (transaction) => {
                     // The outbox stays. It can have changes that the server did not get yet,
-                    // for example deletes, and they must go when the sync is on again.
-                    transaction.objectStore('syncState').clear()
+                    // for example deletes, and they must go when the sync is on again. The
+                    // copies of the settings stay for the same reason.
+                    transaction.objectStore('syncState').delete(STATE_KEY)
                     const books = await resultOf<BookRecord[]>(
                         transaction.objectStore('books').getAll(),
                     )
@@ -744,7 +755,8 @@ export function createSyncStore(database: Database): SyncStore {
                         await deleteLocalBook(transaction, book.id)
                         removed.push(book.id)
                     }
-                    // A family with a file that did not download cannot show.
+                    // A file that did not download cannot come now. A family keeps the faces
+                    // that are on this device, and a family with none of them goes.
                     const fontStore = transaction.objectStore('fonts')
                     const [fonts, keys] = await Promise.all([
                         resultOf<FontRecord[]>(fontStore.getAll()),
@@ -752,9 +764,10 @@ export function createSyncStore(database: Database): SyncStore {
                     ])
                     const present = new Set(keys.map(String))
                     for (const font of fonts) {
-                        if (!font.faces.every((face) => present.has(face.hash))) {
-                            fontStore.delete(font.id)
-                        }
+                        const faces = font.faces.filter((face) => present.has(face.hash))
+                        if (faces.length === font.faces.length) continue
+                        if (faces.length === 0) fontStore.delete(font.id)
+                        else fontStore.put({ ...font, faces })
                     }
                     removeUnusedFontFiles(transaction, present)
                     return removed
