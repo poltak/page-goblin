@@ -245,7 +245,12 @@ export function createFontSheet(options: FontSheetOptions): FontSheet {
                 action: {
                     label: 'Undo',
                     onSelect: () => {
-                        fonts.save([removed]).catch((error: unknown) => {
+                        // A new time, so the family wins over its delete on the sync server.
+                        const restored = {
+                            ...removed,
+                            record: { ...removed.record, updatedAt: now() },
+                        }
+                        fonts.save([restored]).catch((error: unknown) => {
                             console.error(error)
                             notice.show({ message: 'The font did not come back.', tone: 'error' })
                         })

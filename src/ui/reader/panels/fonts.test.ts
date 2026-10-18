@@ -242,6 +242,8 @@ describe('the font sheet', () => {
         notice()!.querySelector('button')!.click()
         await settle()
         expect(fonts.saved.map((write) => write.record.id)).toEqual(['b'])
+        // A new time, so the font wins over its delete on the sync server.
+        expect(fonts.saved[0].record.updatedAt).toBe(500)
         expect(names()).toEqual(['Lora', 'Inter'])
     })
 
