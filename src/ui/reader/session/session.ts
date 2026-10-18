@@ -8,7 +8,8 @@
 import { measureChapter, sanitizeDocument } from '$lib/content'
 import type { ChapterContent, ContentLoader, TextModel } from '$lib/content/types'
 import type { EpubBook } from '$lib/epub/types'
-import { ensureFontLoaded, resolveFontStack } from '$lib/fonts'
+import { resolveFontStack, userFontIdOf } from '$lib/fonts'
+import type { UserFonts } from '$lib/fonts'
 import type {
     Appearance,
     HighlightMark,
@@ -82,6 +83,8 @@ export interface ReaderSessionDeps {
     /** The element that the reader view fills. */
     container: HTMLElement
     settings: SettingsStore
+    /** The fonts that the user added. */
+    fonts: UserFonts
     createView(mode: LayoutMode, options: ReaderViewOptions): ReaderView
     /** The saved position, when the book has one. */
     initialProgress?: ProgressRecord | null
@@ -138,7 +141,7 @@ function pageHidden(): boolean {
 }
 
 export function createReaderSession(deps: ReaderSessionDeps): ReaderSession {
-    const { record, book, content, storage, container, settings, now } = deps
+    const { record, book, content, storage, container, settings, fonts, now } = deps
     const timers = deps.timers ?? DEFAULT_TIMERS
     const emitter = createEmitter<ReaderSessionEvents>()
     const toc: readonly TocEntry[] = Object.freeze(buildToc(book))
@@ -192,14 +195,21 @@ export function createReaderSession(deps: ReaderSessionDeps): ReaderSession {
     let speedDirty = false
     let speedWrittenAt = Number.NEGATIVE_INFINITY
 
-    void ensureFontLoaded(settings.get().fontId)
+    void fonts.ensureLoaded(settings.get().fontId)
     let view = makeView(initial)
 
     const stopSettings = settings.subscribe((next, previous) => {
         if (destroyed) return
-        if (next.fontId !== previous.fontId) void ensureFontLoaded(next.fontId)
+        if (next.fontId !== previous.fontId) void fonts.ensureLoaded(next.fontId)
         if (next.layout !== layout) switchLayout(next.layout)
         else refreshAppearance()
+    })
+    // A change of the fonts of the user can add, change or remove the font of the settings.
+    const stopFonts = fonts.subscribe(() => {
+        if (destroyed) return
+        const { fontId } = settings.get()
+        if (userFontIdOf(fontId) !== null) void fonts.ensureLoaded(fontId)
+        refreshAppearance()
     })
     const stopSystemTheme = deps.watchSystemTheme((dark) => {
         if (destroyed) return
@@ -252,6 +262,7 @@ export function createReaderSession(deps: ReaderSessionDeps): ReaderSession {
             fontFamily: resolveFontStack({
                 fontId: current.fontId,
                 bookFonts: content.bookFonts,
+                userFonts: fonts.list,
             }),
         })
     }
@@ -869,6 +880,7 @@ export function createReaderSession(deps: ReaderSessionDeps): ReaderSession {
         if (speedDirty) writeSpeed(now())
         teardown.abort()
         stopSettings()
+        stopFonts()
         stopSystemTheme()
         emitter.clear()
         backStack.clear()
@@ -887,6 +899,7 @@ export function createReaderSession(deps: ReaderSessionDeps): ReaderSession {
         record,
         book,
         content,
+        fonts,
         toc,
         get view() {
             return view

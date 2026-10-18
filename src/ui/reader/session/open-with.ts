@@ -7,7 +7,8 @@
 
 import type { ContentLoader } from '$lib/content/types'
 import type { EpubBook } from '$lib/epub/types'
-import { BOOK_FONT_PREFIX, FONT_CATALOG, resolveFontStack } from '$lib/fonts'
+import { BOOK_FONT_PREFIX, FONT_CATALOG, resolveFontStack, userFontIdOf } from '$lib/fonts'
+import type { UserFonts } from '$lib/fonts'
 import type { ReaderView } from '$lib/reader/types'
 import type { OpenReaderSessionOptions, ReaderSession } from '../types'
 import { createReaderSession } from './session'
@@ -21,9 +22,12 @@ export interface SessionParts extends Pick<
     createContentLoader(options: { book: EpubBook }): ContentLoader
     /**
      * Makes the font of a `fontId` setting ready for layout. The open calls it only for a
-     * bundled font and for a font of the book, and waits for it for `FONT_WAIT_MS` at most.
+     * bundled font, a font of the user and a font of the book, and waits for it for
+     * `FONT_WAIT_MS` at most.
      */
     loadFont(fontId: string): Promise<unknown>
+    /** The fonts that the user added. The open reads their list again. */
+    fonts: UserFonts
 }
 
 /**
@@ -69,8 +73,13 @@ function untilAborted<T>(work: Promise<T>, signal: AbortSignal | undefined): Pro
     })
 }
 
-/** True for a font that the app downloads. The publisher font and a system font need no load. */
-function isBundledFont(fontId: string): boolean {
+/**
+ * True for a font that needs no book file and that the app must load: a bundled font, which
+ * downloads, and a font of the user, which comes from storage. The publisher font and a system
+ * font need no load.
+ */
+function loadsWithoutBook(fontId: string): boolean {
+    if (userFontIdOf(fontId) !== null) return true
     return FONT_CATALOG.some((entry) => entry.id === fontId && entry.load !== undefined)
 }
 
@@ -133,10 +142,15 @@ export async function openSessionWith(
     ])
     saved.catch(ignore)
 
-    // A bundled font does not need the book file, so its load also starts now. The open of a
-    // book with the publisher font or a system font has no wait for a font.
+    // A sync can change the fonts of the user while no book is open, so the open reads their
+    // list again. Only a book in a font of the user waits for the list.
+    void parts.fonts.refresh()
+
+    // A bundled font and a font of the user do not need the book file, so their load also
+    // starts now. The open of a book with the publisher font or a system font has no wait for
+    // a font.
     const { fontId } = parts.settings.get()
-    const bundledFont = isBundledFont(fontId) ? fontReady(parts, fontId) : undefined
+    const earlyFont = loadsWithoutBook(fontId) ? fontReady(parts, fontId) : undefined
 
     const [record, file] = await Promise.all([storage.getBook(bookId), storage.getFile(bookId)])
     throwIfAborted(signal)
@@ -150,7 +164,7 @@ export async function openSessionWith(
         const [[progress, bookmarks, highlights]] = await Promise.all([
             saved,
             content.prepare(),
-            bundledFont,
+            earlyFont,
         ])
         throwIfAborted(signal)
         // The font faces of the book are in the page only after prepare().
@@ -168,6 +182,7 @@ export async function openSessionWith(
             storage,
             container,
             settings: parts.settings,
+            fonts: parts.fonts,
             createView: parts.createView,
             initialProgress: progress,
             bookmarks,

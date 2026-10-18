@@ -5,6 +5,7 @@ import { createContentLoader } from '$lib/content'
 import type { ContentLoader } from '$lib/content/types'
 import type { EpubBook } from '$lib/epub/types'
 import { EpubError } from '$lib/epub/types'
+import { createFakeUserFonts } from '$lib/fonts/testing/fake-user-fonts'
 import { createSettingsStore } from '$lib/settings'
 import type { OwnedSettingsStore } from '$lib/settings'
 import { createLibraryStorage } from '$lib/storage'
@@ -82,6 +83,7 @@ function makeParts(changes: Partial<SessionParts> = {}): SessionParts {
         loadFont: vi.fn(async () => {
             order.push('font')
         }),
+        fonts: createFakeUserFonts(),
         settings,
         createView: vi.fn((mode, options) => {
             order.push('view')
@@ -445,6 +447,43 @@ describe('openSessionWith', () => {
             expect(parts.loadFont).toHaveBeenCalledWith('literata')
             expect(order).toEqual(['font', 'open', 'prepared', 'view'])
             expect(vi.getTimerCount()).toBe(0)
+        })
+
+        it('starts the load of a font of the user before the book file opens', async () => {
+            await addBook()
+            useFakeTimeouts()
+            settings.update({ fontId: 'user:mine' })
+            const fonts = createFakeUserFonts({
+                list: [
+                    {
+                        id: 'mine',
+                        name: 'Mine',
+                        fallback: 'serif',
+                        faces: [],
+                        addedAt: 1,
+                        updatedAt: 1,
+                    },
+                ],
+            })
+            const parts = makeParts({
+                fonts,
+                openEpub: vi.fn(async () => {
+                    order.push('open')
+                    return book
+                }),
+            })
+
+            await openBook(parts)
+            expect(parts.loadFont).toHaveBeenCalledWith('user:mine')
+            expect(order).toEqual(['font', 'open', 'prepared', 'view'])
+            expect(views.current.options.appearance.fontFamily).toBe('"pg-font-mine", serif')
+        })
+
+        it('reads the list of the fonts of the user again at each open', async () => {
+            await addBook()
+            const fonts = createFakeUserFonts()
+            await openBook(makeParts({ fonts }))
+            expect(fonts.refreshes).toBe(1)
         })
 
         it('makes the view only after a bundled font is ready', async () => {

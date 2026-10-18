@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { EpubBook } from '$lib/epub/types'
 import { openEpub } from '$lib/epub'
-import { ensureFontLoaded } from '$lib/fonts'
+import { userFontsFor } from '$lib/fonts'
 import type { ReaderViewOptions } from '$lib/reader/types'
 import { settings, systemPrefersDark, watchSystemTheme } from '$lib/settings'
 import type { LibraryStorage } from '$lib/storage/types'
@@ -51,7 +51,11 @@ describe.skipIf(!hasReaderModule)('openReaderSession', () => {
         const book = {} as EpubBook
         expect(parts.createContentLoader({ book })).toBe('content loader')
         expect(mocks.createContentLoader).toHaveBeenCalledWith({ book, cacheSize: 12 })
-        expect(parts.loadFont).toBe(ensureFontLoaded)
+        // One font registry for the storage, which stays from one book to the next.
+        expect(parts.fonts).toBe(userFontsFor(options.storage))
+        const load = vi.spyOn(parts.fonts, 'ensureLoaded').mockResolvedValue()
+        await parts.loadFont('user:a')
+        expect(load).toHaveBeenCalledWith('user:a')
         expect(parts.settings).toBe(settings)
         expect(parts.systemDark).toBe(systemPrefersDark)
         expect(parts.watchSystemTheme).toBe(watchSystemTheme)

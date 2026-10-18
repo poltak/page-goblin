@@ -6,6 +6,8 @@ import { DEFAULT_SETTINGS } from '$lib/settings/schema'
 import {
     bookFontEntries,
     ensureFontLoaded,
+    userFontEntries,
+    userFontIdOf,
     FONT_CATALOG,
     FONT_LOAD_LIMIT_MS,
     groupedFontEntries,
@@ -252,6 +254,61 @@ describe('resolveFontStack', () => {
         for (const fontId of ['', 'removed-font', 'Literata', 'toString', '__proto__']) {
             expect(resolveFontStack({ fontId, bookFonts })).toBeNull()
         }
+    })
+})
+
+describe('fonts of the user', () => {
+    const userFonts = [
+        { id: 'b', name: 'Zed Serif', fallback: 'serif' as const },
+        { id: 'a', name: 'My Mono', fallback: 'monospace' as const },
+    ]
+
+    it('makes entries sorted by name with an internal family name', () => {
+        expect(userFontEntries(userFonts)).toEqual([
+            {
+                id: 'user:a',
+                label: 'My Mono',
+                category: 'user',
+                stack: '"pg-font-a", monospace',
+            },
+            { id: 'user:b', label: 'Zed Serif', category: 'user', stack: '"pg-font-b", serif' },
+        ])
+    })
+
+    it('gives the stack of a font of the user, and null for a font that is gone', () => {
+        expect(resolveFontStack({ fontId: 'user:b', bookFonts: [], userFonts })).toBe(
+            '"pg-font-b", serif',
+        )
+        expect(resolveFontStack({ fontId: 'user:c', bookFonts: [], userFonts })).toBeNull()
+        expect(resolveFontStack({ fontId: 'user:b', bookFonts: [] })).toBeNull()
+        expect(resolveFontStack({ fontId: 'user:', bookFonts: [], userFonts })).toBeNull()
+    })
+
+    it('never puts the name from the font file into the stack', () => {
+        const hostile = [{ id: 'x', name: '"; } body { color: red', fallback: 'serif' as const }]
+        expect(resolveFontStack({ fontId: 'user:x', bookFonts: [], userFonts: hostile })).toBe(
+            '"pg-font-x", serif',
+        )
+    })
+
+    it('reads the record id from a setting', () => {
+        expect(userFontIdOf('user:abc')).toBe('abc')
+        expect(userFontIdOf('book:abc')).toBeNull()
+        expect(userFontIdOf('literata')).toBeNull()
+    })
+
+    it('puts the fonts of the user in their own group after the fonts of the book', () => {
+        const groups = groupedFontEntries(['Minion Pro'], userFonts)
+        expect(groups.map((group) => group.label)).toEqual([
+            'This book',
+            'Your fonts',
+            'Serif',
+            'Sans serif',
+            'Accessibility',
+            'Monospace',
+            'On this device',
+        ])
+        expect(groups[1].entries.map((entry) => entry.id)).toEqual(['user:a', 'user:b'])
     })
 })
 

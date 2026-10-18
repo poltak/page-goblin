@@ -159,7 +159,11 @@ export function createNotePopover({ session, host }: PartOptions): Part {
             ? [getNoteBaseSheet(), ...note.styles]
             : [getNoteBaseSheet()]
 
-        const font = resolveFontStack({ fontId, bookFonts: session.content.bookFonts })
+        const font = resolveFontStack({
+            fontId,
+            bookFonts: session.content.bookFonts,
+            userFonts: session.fonts.list,
+        })
         const resolved = resolveTheme({ theme, darkTheme, systemDark: systemPrefersDark() })
         body.style.setProperty('--note-size', `${fontSize}px`)
         // Book stylesheets multiply their absolute sizes by this value, as in the reader view.

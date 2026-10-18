@@ -1,8 +1,13 @@
+import type { FontFallback } from './sfnt'
+
 export type FontCategory =
-    'publisher' | 'serif' | 'sans' | 'accessible' | 'mono' | 'system' | 'book'
+    'publisher' | 'serif' | 'sans' | 'accessible' | 'mono' | 'system' | 'book' | 'user'
 
 export interface FontEntry {
-    /** The value of the `fontId` setting. A font of the open book has the id 'book:' + family. */
+    /**
+     * The value of the `fontId` setting. A font of the open book has the id 'book:' + family,
+     * and a font that the user added has the id 'user:' + the id of its family record.
+     */
     id: string
     label: string
     category: FontCategory
@@ -17,8 +22,16 @@ export interface FontGroup {
     entries: FontEntry[]
 }
 
+/** The part of a font family that the user added (`FontRecord`) that the menu uses. */
+export interface UserFont {
+    id: string
+    name: string
+    fallback: FontFallback
+}
+
 export const PUBLISHER_FONT_ID = 'publisher'
 export const BOOK_FONT_PREFIX = 'book:'
+export const USER_FONT_PREFIX = 'user:'
 
 /** The longest time that `ensureFontLoaded` waits. After it the text shows in a fallback font. */
 export const FONT_LOAD_LIMIT_MS = 3000
@@ -199,7 +212,7 @@ const catalogById = new Map(FONT_CATALOG.map((entry) => [entry.id, entry]))
 const bundledById = new Map(BUNDLED_FONTS.map((font) => [font.id, font]))
 
 /** A CSS string for a family name that can have any characters. */
-function quoteFamily(family: string): string {
+export function quoteFamily(family: string): string {
     const escaped = family.replace(/["\\\0-\x1f\x7f]/g, (char) =>
         char === '"' || char === '\\' ? '\\' + char : '\\' + char.charCodeAt(0).toString(16) + ' ',
     )
@@ -208,6 +221,35 @@ function quoteFamily(family: string): string {
 
 function bookFontStack(family: string): string {
     return `${quoteFamily(family)}, serif`
+}
+
+/**
+ * The CSS family name of the faces of a font that the user added. The name in the font file
+ * is untrusted text, so CSS never gets it.
+ */
+export function userFontFamily(id: string): string {
+    return `pg-font-${id}`
+}
+
+function userFontStack(font: UserFont): string {
+    return `${quoteFamily(userFontFamily(font.id))}, ${font.fallback}`
+}
+
+/** The id of the family record for a `fontId` setting, or null for a different font. */
+export function userFontIdOf(fontId: string): string | null {
+    return fontId.startsWith(USER_FONT_PREFIX) ? fontId.slice(USER_FONT_PREFIX.length) : null
+}
+
+/** Entries for the fonts that the user added, sorted by name. */
+export function userFontEntries(fonts: readonly UserFont[]): FontEntry[] {
+    return fonts
+        .map((font): FontEntry => ({
+            id: USER_FONT_PREFIX + font.id,
+            label: font.name,
+            category: 'user',
+            stack: userFontStack(font),
+        }))
+        .sort((a, b) => a.label.localeCompare(b.label))
 }
 
 /** Entries for the embedded fonts of the open book (`ContentLoader.bookFonts`). */
@@ -224,32 +266,49 @@ export interface ResolveFontStackOptions {
     fontId: string
     /** The embedded font families of the open book. */
     bookFonts: readonly string[]
+    /** The fonts that the user added and that have all their files on this device. */
+    userFonts?: readonly UserFont[]
 }
 
 /**
  * The CSS `font-family` value for a `fontId` setting. Null keeps the publisher font. An id
- * that is not known, and a book font that the open book does not have, also give null.
+ * that is not known, a book font that the open book does not have, and a font that the user
+ * removed also give null.
  */
-export function resolveFontStack({ fontId, bookFonts }: ResolveFontStackOptions): string | null {
+export function resolveFontStack({
+    fontId,
+    bookFonts,
+    userFonts = [],
+}: ResolveFontStackOptions): string | null {
     if (fontId.startsWith(BOOK_FONT_PREFIX)) {
         const family = fontId.slice(BOOK_FONT_PREFIX.length)
         return bookFonts.includes(family) ? bookFontStack(family) : null
+    }
+    const userId = userFontIdOf(fontId)
+    if (userId !== null) {
+        const font = userFonts.find((candidate) => candidate.id === userId)
+        return font ? userFontStack(font) : null
     }
     return catalogById.get(fontId)?.stack ?? null
 }
 
 /**
  * The entries for the font menu. The first group has the publisher font and the fonts of the
- * open book.
+ * open book. The fonts of the user come next, in a group that shows only when it has fonts.
  */
-export function groupedFontEntries(bookFonts: readonly string[]): FontGroup[] {
+export function groupedFontEntries(
+    bookFonts: readonly string[],
+    userFonts: readonly UserFont[] = [],
+): FontGroup[] {
     const inCategory = (category: FontCategory) =>
         FONT_CATALOG.filter((entry) => entry.category === category)
+    const yours = userFontEntries(userFonts)
     return [
         {
             label: 'This book',
             entries: [...inCategory('publisher'), ...bookFontEntries(bookFonts)],
         },
+        ...(yours.length > 0 ? [{ label: 'Your fonts', entries: yours }] : []),
         { label: 'Serif', entries: inCategory('serif') },
         { label: 'Sans serif', entries: inCategory('sans') },
         { label: 'Accessibility', entries: inCategory('accessible') },
@@ -259,7 +318,7 @@ export function groupedFontEntries(bookFonts: readonly string[]): FontGroup[] {
 }
 
 /** Resolves when the promise settles or the time limit ends. Never rejects. */
-function settleWithin(promise: Promise<unknown>, limitMs: number): Promise<void> {
+export function settleWithin(promise: Promise<unknown>, limitMs: number): Promise<void> {
     return new Promise((resolve) => {
         const done = () => {
             clearTimeout(timer)
@@ -270,7 +329,8 @@ function settleWithin(promise: Promise<unknown>, limitMs: number): Promise<void>
     })
 }
 
-async function loadFace(quotedFamily: string): Promise<void> {
+/** Waits for the regular face of a family. The name must be in quotation marks. */
+export async function loadFace(quotedFamily: string): Promise<void> {
     // jsdom has no document.fonts.
     await document.fonts?.load(`1em ${quotedFamily}`)
 }
@@ -287,6 +347,9 @@ const bundledLoads = new Map<string, Promise<void>>()
  * and then the function waits for the regular font file. A font of the open book only gets the
  * wait. The wait stops after `FONT_LOAD_LIMIT_MS`, and the text then shows in a fallback font
  * until the font file arrives. The promise never rejects.
+ *
+ * A font that the user added needs its files from storage. `UserFonts.ensureLoaded` loads it.
+ * This function does nothing for it.
  */
 export function ensureFontLoaded(id: string): Promise<void> {
     if (id.startsWith(BOOK_FONT_PREFIX)) {

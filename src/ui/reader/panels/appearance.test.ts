@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { groupedFontEntries } from '$lib/fonts'
+import { createFakeUserFonts } from '$lib/fonts/testing/fake-user-fonts'
+import type { FakeUserFonts } from '$lib/fonts/testing/fake-user-fonts'
 import {
     settings as appSettings,
     COLUMN_CHOICES,
@@ -19,18 +21,12 @@ import {
     THEME_CHOICES,
 } from '$lib/settings'
 import type { OwnedSettingsStore, Settings, SettingsStorage } from '$lib/settings'
+import type { FontRecord } from '$lib/storage/types'
 import { clearToasts } from '../../app/toast'
 import type { AppearancePanel } from '../parts'
 import { APPEARANCE_KEYS, createAppearancePanel } from './appearance'
 import { createFakeSession, focusOpener, HOSTILE, mountHost } from './testing/fake-session'
 import type { FakeSession } from './testing/fake-session'
-
-const fonts = vi.hoisted(() => ({ ensureFontLoaded: vi.fn(async (_id: string) => {}) }))
-
-vi.mock('$lib/fonts', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('$lib/fonts')>()),
-    ensureFontLoaded: fonts.ensureFontLoaded,
-}))
 
 function fakeStorage(saved?: Partial<Settings>): SettingsStorage {
     const data = new Map<string, string>()
@@ -47,15 +43,23 @@ let store: OwnedSettingsStore
 let panel: AppearancePanel | null = null
 let frames: FrameRequestCallback[]
 
+let userFonts: FakeUserFonts
+
 interface MountOptions {
     saved?: Partial<Settings>
     bookFonts?: string[]
+    userFonts?: FontRecord[]
+}
+
+function makeUserFont(id: string, name: string): FontRecord {
+    return { id, name, fallback: 'serif', faces: [], addedAt: 1, updatedAt: 1 }
 }
 
 /** Makes the panel on a real settings store and opens it. */
-function mount({ saved, bookFonts }: MountOptions = {}): AppearancePanel {
+function mount({ saved, bookFonts, userFonts: list }: MountOptions = {}): AppearancePanel {
     host = mountHost()
-    session = createFakeSession({ bookFonts })
+    userFonts = createFakeUserFonts({ list })
+    session = createFakeSession({ bookFonts, fonts: userFonts })
     store = createSettingsStore({ storage: fakeStorage(saved) })
     panel = createAppearancePanel({ session, host, settings: store })
     panel.open()
@@ -117,7 +121,6 @@ afterEach(() => {
     panel = null
     store?.destroy()
     clearToasts()
-    fonts.ensureFontLoaded.mockClear()
     vi.unstubAllGlobals()
 })
 
@@ -288,7 +291,7 @@ describe('font', () => {
         mount({ saved: { fontId: 'literata' } })
 
         expect(fontSelect().value).toBe('literata')
-        expect(fonts.ensureFontLoaded).not.toHaveBeenCalled()
+        expect(userFonts.loads).toEqual([])
         expect(fontSelect().querySelector('[style]')).toBeNull()
     })
 
@@ -297,12 +300,51 @@ describe('font', () => {
 
         selectFont('lora')
         expect(store.get().fontId).toBe('lora')
-        expect(fonts.ensureFontLoaded).toHaveBeenLastCalledWith('lora')
+        expect(userFonts.loads.at(-1)).toBe('lora')
 
         selectFont('book:Book Serif')
         expect(store.get().fontId).toBe('book:Book Serif')
-        expect(fonts.ensureFontLoaded).toHaveBeenLastCalledWith('book:Book Serif')
+        expect(userFonts.loads.at(-1)).toBe('book:Book Serif')
         expect(fontSelect().value).toBe('book:Book Serif')
+    })
+
+    it('lists the fonts of the user in their own group, as text', () => {
+        mount({ userFonts: [makeUserFont('b', 'Zed'), makeUserFont('a', HOSTILE)] })
+
+        const group = fontSelect().querySelectorAll('optgroup')[1]
+        expect(group.label).toBe('Your fonts')
+        const options = Array.from(group.querySelectorAll('option'))
+        expect(options.map((option) => option.value)).toEqual(['user:a', 'user:b'])
+        expect(options[0].textContent).toBe(HOSTILE)
+        expect(fontSelect().querySelector('img, b')).toBeNull()
+    })
+
+    it('writes a font of the user and loads it', () => {
+        mount({ userFonts: [makeUserFont('a', 'Mine')] })
+
+        selectFont('user:a')
+        expect(store.get().fontId).toBe('user:a')
+        expect(userFonts.loads.at(-1)).toBe('user:a')
+    })
+
+    it('shows "Publisher font" for a font of the user that is not on this device', () => {
+        mount({ saved: { fontId: 'user:gone' }, userFonts: [makeUserFont('a', 'Mine')] })
+
+        expect(fontSelect().value).toBe('publisher')
+        expect(store.get().fontId).toBe('user:gone')
+    })
+
+    it('changes the menu when the fonts of the user change, and keeps the selection', () => {
+        mount({ saved: { fontId: 'user:a' } })
+        expect(fontSelect().value).toBe('publisher')
+
+        userFonts.setList([makeUserFont('a', 'Arrived')])
+        expect(fontSelect().value).toBe('user:a')
+        expect(fontSelect().selectedOptions[0].textContent).toBe('Arrived')
+
+        userFonts.setList([])
+        expect(fontSelect().value).toBe('publisher')
+        expect(fontSelect().querySelector('option[value="user:a"]')).toBeNull()
     })
 
     it('shows a stored font of this book as selected', () => {

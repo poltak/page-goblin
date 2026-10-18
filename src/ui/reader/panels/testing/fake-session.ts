@@ -3,6 +3,8 @@
 import { vi } from 'vitest'
 import type { ContentLoader } from '$lib/content/types'
 import type { EpubBook } from '$lib/epub/types'
+import { createFakeUserFonts } from '$lib/fonts/testing/fake-user-fonts'
+import type { FakeUserFonts } from '$lib/fonts/testing/fake-user-fonts'
 import type { ReaderView } from '$lib/reader/types'
 import type { BookmarkRecord, BookRecord, HighlightRecord } from '$lib/storage/types'
 import type { Locator } from '$lib/types'
@@ -115,6 +117,7 @@ export interface FakeSessionOptions {
     bookmarks?: BookmarkRecord[]
     highlights?: HighlightRecord[]
     bookFonts?: string[]
+    fonts?: FakeUserFonts
 }
 
 type Listener = (payload: never) => void
@@ -155,6 +158,7 @@ export function createFakeSession(options: FakeSessionOptions = {}) {
         record: makeRecord(options.record),
         book: {} as EpubBook,
         content: { bookFonts: options.bookFonts ?? [] } as unknown as ContentLoader,
+        fonts: options.fonts ?? createFakeUserFonts(),
         toc,
         view: {} as ReaderView,
         position: null,

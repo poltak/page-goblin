@@ -4,6 +4,7 @@
  */
 
 import { vi } from 'vitest'
+import { createFakeUserFonts } from '$lib/fonts/testing/fake-user-fonts'
 import type { RelocateInfo } from '$lib/reader/types'
 import type { HighlightRecord } from '$lib/storage/types'
 import { createEmitter } from '../../session/emitter'
@@ -120,6 +121,7 @@ export function createFakeSession(initial: readonly HighlightRecord[] = []) {
         view: { clearSelection },
         book: { spineIndexOf },
         content: { bookFonts: [] },
+        fonts: createFakeUserFonts(),
         on,
         addHighlight,
         updateHighlight,

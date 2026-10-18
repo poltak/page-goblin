@@ -6,12 +6,7 @@
  * change shows in the book at once.
  */
 
-import {
-    ensureFontLoaded,
-    groupedFontEntries,
-    PUBLISHER_FONT_ID,
-    resolveFontStack,
-} from '$lib/fonts'
+import { groupedFontEntries, PUBLISHER_FONT_ID, resolveFontStack } from '$lib/fonts'
 import {
     settings as appSettings,
     COLUMN_CHOICES,
@@ -108,6 +103,7 @@ export function createAppearancePanel(options: AppearancePanelOptions): Appearan
     const { session, host } = options
     const store = options.settings ?? appSettings
     const bookFonts = session.content.bookFonts
+    const userFonts = session.fonts
 
     const root = document.importNode(template, true)
     const dialog = qs<HTMLDialogElement>('.appearance-panel', root)
@@ -139,12 +135,13 @@ export function createAppearancePanel(options: AppearancePanelOptions): Appearan
 
     function buildFontMenu(): void {
         const groups = document.createDocumentFragment()
-        for (const { label, entries } of groupedFontEntries(bookFonts)) {
+        for (const { label, entries } of groupedFontEntries(bookFonts, userFonts.list)) {
             const group = document.createElement('optgroup')
             group.label = label
             for (const entry of entries) {
-                // The name of a book font is text from the book file. The options show in the
-                // font of the app, so the menu downloads no font.
+                // The name of a book font is text from the book file, and the name of a font
+                // of the user is text from the font file. The options show in the font of the
+                // app, so the menu loads no font.
                 const option = document.createElement('option')
                 option.value = entry.id
                 option.textContent = entry.label
@@ -188,7 +185,9 @@ export function createAppearancePanel(options: AppearancePanelOptions): Appearan
 
         // The stored font can be a font of a different book, or a font that is not there now.
         // The book then shows in the publisher font.
-        const known = resolveFontStack({ fontId: current.fontId, bookFonts }) !== null
+        const known =
+            resolveFontStack({ fontId: current.fontId, bookFonts, userFonts: userFonts.list }) !==
+            null
         fontSelect.value = known ? current.fontId : PUBLISHER_FONT_ID
 
         showSize(current.fontSize)
@@ -286,7 +285,7 @@ export function createAppearancePanel(options: AppearancePanelOptions): Appearan
         if (input === fontSelect) {
             const fontId = fontSelect.value
             store.update({ fontId })
-            void ensureFontLoaded(fontId)
+            void userFonts.ensureLoaded(fontId)
         } else if (!(input instanceof HTMLInputElement)) {
             return
         } else if (input.type === 'radio') {
@@ -324,6 +323,10 @@ export function createAppearancePanel(options: AppearancePanelOptions): Appearan
         if (!dialog.open) return
         if (APPEARANCE_KEYS.some((key) => next[key] !== previous[key])) sync()
     })
+    const stopFonts = userFonts.subscribe(() => {
+        buildFontMenu()
+        sync()
+    })
 
     return {
         open() {
@@ -335,6 +338,7 @@ export function createAppearancePanel(options: AppearancePanelOptions): Appearan
         },
         destroy() {
             unsubscribe()
+            stopFonts()
             dropWaiting()
             // A message on screen must not move to the toasts of the app at this close.
             notice.destroy()

@@ -502,6 +502,22 @@ describe('createReaderHost', () => {
         expect(annotationsChanged).toHaveBeenCalledTimes(1)
     })
 
+    it('tells the open reader that a sync changed the fonts', async () => {
+        const fontsChanged = vi.fn()
+        mountReader.mockImplementation(async (options) => {
+            await fakeReader(options)
+            return { destroy: async () => options.root.replaceChildren(), fontsChanged }
+        })
+        const host = makeHost()
+        host.fontsChanged()
+
+        host.show('b1')
+        await host.settled()
+        host.fontsChanged()
+
+        expect(fontsChanged).toHaveBeenCalledTimes(1)
+    })
+
     it('gives a position from a different device to the reader of that book only', async () => {
         const offerPosition = vi.fn()
         mountReader.mockImplementation(async (options) => {

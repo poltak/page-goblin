@@ -4,6 +4,8 @@ import { createContentLoader } from '$lib/content'
 import type { ContentLoader } from '$lib/content/types'
 import type { EpubBook } from '$lib/epub/types'
 import { ensureFontLoaded } from '$lib/fonts'
+import { createFakeUserFonts } from '$lib/fonts/testing/fake-user-fonts'
+import type { FakeUserFonts } from '$lib/fonts/testing/fake-user-fonts'
 import type { RelocateInfo, SelectionInfo } from '$lib/reader/types'
 import { createSettingsStore } from '$lib/settings'
 import type { OwnedSettingsStore, SettingsPatch } from '$lib/settings'
@@ -11,6 +13,7 @@ import { createLibraryStorage } from '$lib/storage'
 import type {
     BookmarkRecord,
     BookRecord,
+    FontRecord,
     HighlightRecord,
     LibraryStorage,
     ProgressRecord,
@@ -63,6 +66,7 @@ interface OpenOptions {
     settings?: SettingsPatch
     systemDark?: boolean
     bookFonts?: string[]
+    userFonts?: FontRecord[]
 }
 
 interface Harness {
@@ -71,6 +75,7 @@ interface Harness {
     storage: LibraryStorage
     settings: OwnedSettingsStore
     content: ContentLoader
+    fonts: FakeUserFonts
     container: HTMLElement
     /** Each event of the session in sequence. */
     events: [name: keyof ReaderSessionEvents, payload: unknown][]
@@ -119,6 +124,12 @@ async function open(options: OpenOptions = {}): Promise<Harness> {
 
     const loader = createContentLoader({ book })
     const bookFonts = options.bookFonts ?? []
+    // The registry gives each font to the mocked loader, as the real one does for a font that
+    // is not a font of the user.
+    const fonts = createFakeUserFonts({
+        list: options.userFonts,
+        load: (fontId) => ensureFontLoaded(fontId),
+    })
     const content: ContentLoader = {
         prepare: loader.prepare,
         get bookFonts() {
@@ -146,6 +157,7 @@ async function open(options: OpenOptions = {}): Promise<Harness> {
         storage,
         container,
         settings,
+        fonts,
         createView: views.createView,
         initialProgress: options.progress,
         bookmarks: options.bookmarks ?? [],
@@ -170,6 +182,7 @@ async function open(options: OpenOptions = {}): Promise<Harness> {
         storage,
         settings,
         content,
+        fonts,
         container,
         events,
         eventNames: () => events.map(([name]) => name),
@@ -369,6 +382,37 @@ describe('appearance', () => {
 
         const missing = await open({ settings: { fontId: 'book:Minion' } })
         expect(missing.views.current.options.appearance.fontFamily).toBeNull()
+    })
+
+    it('uses a font of the user only when its files are on this device', async () => {
+        const font: FontRecord = {
+            id: 'mine',
+            name: 'Mine',
+            fallback: 'sans-serif',
+            faces: [],
+            addedAt: 1,
+            updatedAt: 1,
+        }
+        const has = await open({ settings: { fontId: 'user:mine' }, userFonts: [font] })
+        expect(has.views.current.options.appearance.fontFamily).toBe('"pg-font-mine", sans-serif')
+        expect(has.fonts.loads).toEqual(['user:mine'])
+
+        const missing = await open({ settings: { fontId: 'user:mine' } })
+        expect(missing.views.current.options.appearance.fontFamily).toBeNull()
+
+        // The sync brings the font. The view changes to it, and the font loads.
+        missing.fonts.setList([font])
+        expect(missing.views.current.setAppearance).toHaveBeenLastCalledWith(
+            expect.objectContaining({ fontFamily: '"pg-font-mine", sans-serif' }),
+        )
+        expect(missing.fonts.loads).toEqual(['user:mine', 'user:mine'])
+    })
+
+    it('stops following the fonts of the user after destroy', async () => {
+        const { session, fonts, views } = await open()
+        await session.destroy()
+        fonts.setList([])
+        expect(views.current.setAppearance).not.toHaveBeenCalled()
     })
 
     it('loads the font of the settings and does not wait for it', async () => {

@@ -60,6 +60,8 @@ export interface ReaderHost {
     offerPosition(progress: ProgressRecord): void
     /** A sync changed the bookmarks or highlights of a book. */
     annotationsChanged(bookId: string): void
+    /** A sync changed the fonts that the user added. */
+    fontsChanged(): void
 }
 
 export function createReaderHost(options: ReaderHostOptions): ReaderHost {
@@ -204,6 +206,10 @@ export function createReaderHost(options: ReaderHostOptions): ReaderHost {
         },
         annotationsChanged(bookId) {
             if (mounted?.bookId === bookId) mounted.reader?.annotationsChanged?.()
+        },
+        fontsChanged() {
+            // With no reader, the next book reads the fonts at its open.
+            mounted?.reader?.fontsChanged?.()
         },
     }
 }

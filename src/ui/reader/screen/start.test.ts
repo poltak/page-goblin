@@ -471,3 +471,18 @@ describe('annotations from a different device', () => {
         expect(session.reloadAnnotations).toHaveBeenCalledTimes(1)
     })
 })
+
+describe('fonts from a different device', () => {
+    it('makes the open session read the fonts of the user again', async () => {
+        const { reader, resolve, session } = setup()
+        const refresh = vi.spyOn(session.fonts, 'refresh')
+        reader.fontsChanged()
+
+        await flush()
+        resolve()
+        await flush()
+        reader.fontsChanged()
+
+        expect(refresh).toHaveBeenCalledTimes(1)
+    })
+})

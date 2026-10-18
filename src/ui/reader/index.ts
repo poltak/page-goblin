@@ -38,5 +38,6 @@ export async function mountReader(options: ReaderMountOptions): Promise<MountedR
         destroy: reader.destroy,
         offerPosition: reader.offerPosition,
         annotationsChanged: reader.annotationsChanged,
+        fontsChanged: reader.fontsChanged,
     }
 }

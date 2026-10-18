@@ -7,6 +7,7 @@ import { vi } from 'vitest'
 import type { Mock } from 'vitest'
 import type { ContentLoader } from '$lib/content/types'
 import type { EpubBook } from '$lib/epub/types'
+import { createFakeUserFonts } from '$lib/fonts/testing/fake-user-fonts'
 import type { ReaderView, RelocateInfo } from '$lib/reader/types'
 import type { BookRecord } from '$lib/storage/types'
 import type { Locator } from '$lib/types'
@@ -149,6 +150,7 @@ export function makeFakeSession(changes: Partial<FakeSessionState> = {}): FakeSe
         },
         book: {} as EpubBook,
         content: {} as ContentLoader,
+        fonts: createFakeUserFonts(),
         toc: [],
         view: {} as ReaderView,
         bookmarks: [],

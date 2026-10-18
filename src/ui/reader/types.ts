@@ -9,6 +9,7 @@
 
 import type { ContentLoader } from '$lib/content/types'
 import type { EpubBook } from '$lib/epub/types'
+import type { UserFonts } from '$lib/fonts/user-fonts'
 import type { LinkTarget, ReaderView, RelocateInfo, SelectionInfo } from '$lib/reader/types'
 import type {
     BookmarkRecord,
@@ -92,6 +93,8 @@ export interface ReaderSession {
     readonly record: BookRecord
     readonly book: EpubBook
     readonly content: ContentLoader
+    /** The fonts that the user added. The registry is the same for each book of the page. */
+    readonly fonts: UserFonts
     /** The table of contents, or one entry for each linear spine item when the book has none. */
     readonly toc: readonly TocEntry[]
     /** The view that is mounted now. Read it again after a 'view' event. */
@@ -204,4 +207,6 @@ export interface MountedReader {
     offerPosition?(progress: ProgressRecord): void
     /** A sync changed the bookmarks or the highlights of this book. */
     annotationsChanged?(): void
+    /** A sync changed the fonts that the user added. */
+    fontsChanged?(): void
 }

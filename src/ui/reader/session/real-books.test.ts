@@ -17,6 +17,7 @@ import {
 } from '$lib/content'
 import { openEpub } from '$lib/epub'
 import type { EpubBook } from '$lib/epub/types'
+import { createFakeUserFonts } from '$lib/fonts/testing/fake-user-fonts'
 import { createSettingsStore } from '$lib/settings'
 import { estimateTextStats } from '$lib/storage'
 import type { BookRecord, SpineStats } from '$lib/storage/types'
@@ -70,6 +71,7 @@ async function checkBook(file: string, report: string[]): Promise<void> {
         storage,
         container: document.createElement('div'),
         settings,
+        fonts: createFakeUserFonts(),
         createView: views.createView,
         bookmarks: [],
         highlights: [],
