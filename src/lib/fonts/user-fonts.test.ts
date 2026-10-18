@@ -249,6 +249,15 @@ describe('createUserFonts', () => {
             expect(pageFaces.size).toBe(2)
         })
 
+        it('uses the read of the list that is on its way', async () => {
+            const { source } = makeSource([makeFont('a')])
+            const fonts = createUserFonts(source)
+            void fonts.refresh()
+            await fonts.ensureLoaded('user:a')
+            expect(source.listFonts).toHaveBeenCalledOnce()
+            expect(pageFaces.size).toBe(2)
+        })
+
         it('leaves out a face whose file is not there', async () => {
             const { source } = makeSource([makeFont('a')])
             source.getFontFile.mockResolvedValueOnce(undefined)

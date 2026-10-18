@@ -187,6 +187,8 @@ export function createUserFonts(source: UserFontSource): UserFonts {
     }
 
     async function loadUserFont(id: string): Promise<void> {
+        // The open of a book starts a read of the list. That read is new enough.
+        if (reading) await reading
         // A different tab or the sync can add a family that the list does not have yet.
         if (!loaded || !find(id)) await refresh()
         const family = find(id)
