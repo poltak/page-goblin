@@ -6,7 +6,7 @@
  * that the text uses. The Content Security Policy allows `blob:` in `font-src`.
  */
 
-import type { FontRecord, LibraryStorage } from '$lib/storage/types'
+import type { FontRecord, LibraryStorage, NewFont } from '$lib/storage/types'
 import {
     ensureFontLoaded,
     FONT_LOAD_LIMIT_MS,
@@ -17,7 +17,10 @@ import {
     userFontIdOf,
 } from './catalog'
 
-export type UserFontSource = Pick<LibraryStorage, 'listFonts' | 'getFontFile'>
+export type UserFontSource = Pick<
+    LibraryStorage,
+    'listFonts' | 'getFontFile' | 'putFont' | 'deleteFont'
+>
 
 export interface UserFonts {
     /** The families that have all their files on this device, sorted by name. */
@@ -35,6 +38,13 @@ export interface UserFonts {
      * is `ensureFontLoaded`. Waits `FONT_LOAD_LIMIT_MS` at most. Never rejects.
      */
     ensureLoaded(fontId: string): Promise<void>
+    /** Writes the families, one transaction each, and then reads the list again. */
+    save(fonts: readonly NewFont[]): Promise<void>
+    /**
+     * Removes a family and reads the list again. Resolves with a copy of the family and its
+     * files, so a `save` of it puts the family back. Null when the family is not there.
+     */
+    remove(id: string): Promise<NewFont | null>
 }
 
 interface Registered {
@@ -185,11 +195,40 @@ export function createUserFonts(source: UserFontSource): UserFonts {
         await loadFace(quoteFamily(userFontFamily(id)))
     }
 
+    async function save(fonts: readonly NewFont[]): Promise<void> {
+        try {
+            for (const font of fonts) await source.putFont(font)
+        } finally {
+            await refresh()
+        }
+    }
+
+    async function remove(id: string): Promise<NewFont | null> {
+        if (!loaded) await refresh()
+        const record = find(id)
+        if (!record) return null
+        // The bytes go into memory, because a file that leaves storage can stop being readable.
+        const files = new Map<string, Blob>()
+        for (const face of record.faces) {
+            const file = await source.getFontFile(face.hash)
+            if (file)
+                files.set(face.hash, new Blob([await file.arrayBuffer()], { type: file.type }))
+        }
+        try {
+            await source.deleteFont(id)
+        } finally {
+            await refresh()
+        }
+        return { record, files }
+    }
+
     return {
         get list() {
             return list
         },
         refresh,
+        save,
+        remove,
         subscribe(listener) {
             listeners.add(listener)
             return () => listeners.delete(listener)

@@ -1,6 +1,6 @@
 /** A registry of user fonts for tests. It has no storage and adds no faces to the page. */
 
-import type { FontRecord } from '$lib/storage/types'
+import type { FontRecord, NewFont } from '$lib/storage/types'
 import type { UserFonts } from '../user-fonts'
 
 export interface FakeUserFonts extends UserFonts {
@@ -10,6 +10,8 @@ export interface FakeUserFonts extends UserFonts {
     readonly loads: readonly string[]
     /** The number of `refresh` calls. */
     readonly refreshes: number
+    /** The families of each `save` call, in order. */
+    readonly saved: readonly NewFont[]
 }
 
 export interface FakeUserFontsOptions {
@@ -22,6 +24,7 @@ export function createFakeUserFonts(options: FakeUserFontsOptions = {}): FakeUse
     let list = options.list ?? []
     let refreshes = 0
     const loads: string[] = []
+    const saved: NewFont[] = []
     const listeners = new Set<(list: readonly FontRecord[]) => void>()
     return {
         get list() {
@@ -33,6 +36,9 @@ export function createFakeUserFonts(options: FakeUserFontsOptions = {}): FakeUse
         get refreshes() {
             return refreshes
         },
+        get saved() {
+            return saved
+        },
         async refresh() {
             refreshes++
         },
@@ -43,6 +49,20 @@ export function createFakeUserFonts(options: FakeUserFontsOptions = {}): FakeUse
         async ensureLoaded(fontId) {
             loads.push(fontId)
             await options.load?.(fontId)
+        },
+        async save(fonts) {
+            saved.push(...fonts)
+            const ids = new Set(fonts.map((font) => font.record.id))
+            this.setList([
+                ...list.filter((font) => !ids.has(font.id)),
+                ...fonts.map((f) => f.record),
+            ])
+        },
+        async remove(id) {
+            const record = list.find((font) => font.id === id)
+            if (!record) return null
+            this.setList(list.filter((font) => font.id !== id))
+            return { record, files: new Map() }
         },
         setList(next) {
             list = next

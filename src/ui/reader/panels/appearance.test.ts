@@ -308,6 +308,20 @@ describe('font', () => {
         expect(fontSelect().value).toBe('book:Book Serif')
     })
 
+    it('opens the sheet of the fonts of the user, and removes it with the panel', async () => {
+        const appearance = mount()
+        const button = q('[data-action="fonts"]')
+        expect(button.textContent!.trim()).toBe('Your fonts')
+        button.click()
+
+        await vi.waitFor(() => {
+            expect(host.querySelector<HTMLDialogElement>('.fonts-panel')?.open).toBe(true)
+        })
+        appearance.destroy()
+        panel = null
+        await vi.waitFor(() => expect(host.querySelector('.fonts-panel')).toBeNull())
+    })
+
     it('lists the fonts of the user in their own group, as text', () => {
         mount({ userFonts: [makeUserFont('b', 'Zed'), makeUserFont('a', HOSTILE)] })
 

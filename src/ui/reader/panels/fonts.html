@@ -1,0 +1,64 @@
+<dialog class="sheet panel-sheet fonts-panel" aria-labelledby="fonts-title" closedby="any">
+    <header class="sheet-header">
+        <h2 class="sheet-title" id="fonts-title">Your fonts</h2>
+        <button class="icon-btn" type="button" aria-label="Close" data-close>
+            <svg class="icon icon-lg" aria-hidden="true"><use href="#i-x" /></svg>
+        </button>
+    </header>
+    <div class="sheet-body stack">
+        <p class="field-help">
+            Add .ttf, .otf, .woff or .woff2 files. Select all files of a font together, for example
+            the regular, italic, bold and bold italic files.
+        </p>
+        <button class="btn btn-primary btn-block" type="button" data-action="add">
+            <svg class="icon" aria-hidden="true"><use href="#i-plus" /></svg>
+            <span data-label>Add fonts</span>
+        </button>
+        <input
+            class="fonts-input"
+            type="file"
+            multiple
+            hidden
+            accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2"
+        />
+        <div class="fonts-problems" role="alert" hidden>
+            <p class="field-error">Some files were not added:</p>
+            <ul class="fonts-problem-list"></ul>
+        </div>
+        <ul class="list list-divided fonts-list"></ul>
+        <div class="empty-state" hidden>
+            <svg class="icon" aria-hidden="true"><use href="#i-type" /></svg>
+            <p class="empty-state-title">No fonts yet</p>
+            <p class="empty-state-text">The fonts that you add show in the Font menu.</p>
+        </div>
+    </div>
+</dialog>
+
+<template data-row="font">
+    <li class="fonts-row">
+        <div class="fonts-row-body">
+            <span class="fonts-row-name"></span>
+            <span class="fonts-row-styles"></span>
+            <form class="fonts-rename" hidden>
+                <input class="input" type="text" maxlength="100" required />
+                <button class="btn btn-sm btn-primary" type="submit">Save</button>
+            </form>
+        </div>
+        <button class="icon-btn" type="button" data-action="rename">
+            <svg class="icon" aria-hidden="true"><use href="#i-edit" /></svg>
+        </button>
+        <button class="icon-btn" type="button" data-action="styles">
+            <svg class="icon" aria-hidden="true"><use href="#i-plus" /></svg>
+        </button>
+        <button class="icon-btn" type="button" data-action="remove">
+            <svg class="icon" aria-hidden="true"><use href="#i-trash" /></svg>
+        </button>
+    </li>
+</template>
+
+<template data-row="problem">
+    <li class="fonts-problem">
+        <span class="fonts-problem-file"></span>
+        <span class="fonts-problem-text"></span>
+    </li>
+</template>

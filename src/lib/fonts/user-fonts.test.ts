@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { FontRecord } from '$lib/storage/types'
+import type { FontRecord, NewFont } from '$lib/storage/types'
 import { FONT_LOAD_LIMIT_MS } from './catalog'
 import { createUserFonts, userFontsFor } from './user-fonts'
 import type { UserFontSource } from './user-fonts'
@@ -51,6 +51,12 @@ function makeSource(fonts: FontRecord[]) {
             async (hash: string): Promise<Blob | undefined> =>
                 new Blob([hash], { type: 'font/ttf' }),
         ),
+        putFont: vi.fn(async ({ record }: NewFont) => {
+            state.fonts = [...state.fonts.filter((font) => font.id !== record.id), record]
+        }),
+        deleteFont: vi.fn(async (id: string) => {
+            state.fonts = state.fonts.filter((font) => font.id !== id)
+        }),
     } satisfies UserFontSource
     return { source, state }
 }
@@ -287,6 +293,58 @@ describe('createUserFonts', () => {
             await fonts.ensureLoaded('user:a')
             expect(source.getFontFile).not.toHaveBeenCalled()
         })
+    })
+})
+
+describe('writes', () => {
+    it('saves families and reads the list again', async () => {
+        const { source } = makeSource([])
+        const fonts = createUserFonts(source)
+        const listener = vi.fn()
+        fonts.subscribe(listener)
+        const font = { record: makeFont('a'), files: new Map() }
+
+        await fonts.save([font, { record: makeFont('b'), files: new Map() }])
+
+        expect(source.putFont.mock.calls).toEqual([[font], [expect.anything()]])
+        expect(fonts.list.map((record) => record.id)).toEqual(['a', 'b'])
+        expect(listener).toHaveBeenCalledOnce()
+    })
+
+    it('reads the list again also when a save fails', async () => {
+        const { source, state } = makeSource([])
+        const fonts = createUserFonts(source)
+        source.putFont.mockImplementationOnce(async () => {
+            state.fonts = [makeFont('partly')]
+            throw new Error('disk full')
+        })
+
+        await expect(fonts.save([{ record: makeFont('a'), files: new Map() }])).rejects.toThrow(
+            'disk full',
+        )
+        expect(fonts.list.map((record) => record.id)).toEqual(['partly'])
+    })
+
+    it('removes a family and gives a copy that puts it back', async () => {
+        const { source } = makeSource([makeFont('a')])
+        const fonts = createUserFonts(source)
+
+        const removed = await fonts.remove('a')
+
+        expect(source.deleteFont).toHaveBeenCalledWith('a')
+        expect(fonts.list).toEqual([])
+        expect(removed?.record).toEqual(makeFont('a'))
+        expect([...removed!.files.keys()]).toEqual(['a-regular', 'a-italic'])
+        expect(await removed!.files.get('a-italic')!.text()).toBe('a-italic')
+
+        await fonts.save([removed!])
+        expect(fonts.list).toEqual([makeFont('a')])
+    })
+
+    it('gives null for a family that is not there', async () => {
+        const { source } = makeSource([])
+        expect(await createUserFonts(source).remove('a')).toBeNull()
+        expect(source.deleteFont).not.toHaveBeenCalled()
     })
 })
 

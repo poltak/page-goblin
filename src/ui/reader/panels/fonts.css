@@ -1,0 +1,79 @@
+/*
+ * The sheet of the fonts that the user added. Class selectors only, because this file is not
+ * in a cascade layer and wins over each component rule.
+ */
+
+/* The sheet opens on top of the reading settings, which have no scrim. */
+.fonts-panel::backdrop {
+    background: transparent;
+}
+
+.fonts-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-height: var(--control-h);
+    padding-block: var(--space-2);
+
+    /* While the name changes, the form replaces the text and the buttons of the row. */
+    &[data-editing] {
+        & .fonts-row-name,
+        & .fonts-row-styles,
+        & > .icon-btn {
+            display: none;
+        }
+    }
+}
+
+.fonts-row-body {
+    display: grid;
+    flex: 1 1 auto;
+    gap: calc(var(--space-1) / 2);
+    min-width: 0;
+}
+
+/* The name shows in its own font. */
+.fonts-row-name {
+    font-size: var(--text-lg);
+    line-height: var(--leading-snug);
+    overflow-wrap: anywhere;
+}
+
+.fonts-row-styles {
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    line-height: var(--leading-snug);
+}
+
+.fonts-rename {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+
+    & > .input {
+        flex: 1 1 auto;
+    }
+}
+
+.fonts-problems {
+    display: grid;
+    gap: var(--space-1);
+}
+
+.fonts-problem-list {
+    display: grid;
+    gap: var(--space-1);
+    margin: 0;
+    padding-inline-start: var(--space-4);
+    font-size: var(--text-sm);
+    line-height: var(--leading-snug);
+}
+
+.fonts-problem-file {
+    font-weight: var(--weight-medium);
+    overflow-wrap: anywhere;
+
+    &::after {
+        content: ': ';
+    }
+}

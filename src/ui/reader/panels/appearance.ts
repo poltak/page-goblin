@@ -29,6 +29,7 @@ import { connectDialog, openDialog } from '../../app/dialog'
 import { on, qs, qsa, setRangeValue } from '../../dom'
 import type { AppearancePanel, PartOptions } from '../parts'
 import markup from './appearance.html?raw'
+import type { FontSheet } from './fonts'
 import { createNotice, parseMarkup } from './shared'
 import './appearance.css'
 
@@ -132,6 +133,9 @@ export function createAppearancePanel(options: AppearancePanelOptions): Appearan
         SWITCH_KEYS.map((key) => [key, qs<HTMLInputElement>(`[data-switch="${key}"]`, dialog)]),
     )
     const notice = createNotice(dialog)
+    /** The sheet of the fonts of the user. It loads at its first use. */
+    let fontSheet: Promise<FontSheet> | null = null
+    let destroyed = false
 
     function buildFontMenu(): void {
         const groups = document.createDocumentFragment()
@@ -262,6 +266,30 @@ export function createAppearancePanel(options: AppearancePanelOptions): Appearan
         store.update({ fontSize: clamp(size, FONT_SIZE_MIN, FONT_SIZE_MAX) })
     }
 
+    function openFontSheet(opener: HTMLElement): void {
+        if (!fontSheet) {
+            const loading = import('./fonts').then(({ createFontSheet }) => {
+                const sheet = createFontSheet({ session, host, settings: store })
+                if (destroyed) sheet.destroy()
+                return sheet
+            })
+            fontSheet = loading
+            loading.catch(() => {
+                // The next tap tries again, for example after the network comes back.
+                if (fontSheet === loading) fontSheet = null
+            })
+        }
+        fontSheet.then(
+            (sheet) => {
+                if (!destroyed && dialog.open) sheet.open(opener)
+            },
+            (error: unknown) => {
+                console.error(error)
+                notice.show({ message: 'Your fonts did not load. Try again.', tone: 'error' })
+            },
+        )
+    }
+
     function reset(): void {
         dropWaiting()
         const before = store.get()
@@ -303,6 +331,7 @@ export function createAppearancePanel(options: AppearancePanelOptions): Appearan
         if (!button) return
         if (button.dataset.step) step(Number(button.dataset.step))
         else if (button.dataset.action === 'reset') reset()
+        else if (button.dataset.action === 'fonts') openFontSheet(button)
     })
 
     sizeSlider.min = String(FONT_SIZE_MIN)
@@ -337,6 +366,11 @@ export function createAppearancePanel(options: AppearancePanelOptions): Appearan
             dialog.close()
         },
         destroy() {
+            destroyed = true
+            void fontSheet?.then(
+                (sheet) => sheet.destroy(),
+                () => {},
+            )
             unsubscribe()
             stopFonts()
             dropWaiting()
