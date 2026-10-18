@@ -637,7 +637,30 @@ describe('createSyncEngine', () => {
             expect((await laptop.storage.listFonts()).map((font) => font.id)).toEqual(['f-1'])
         })
 
-        it('refuses a damaged font file and asks for it again after an hour', async () => {
+        it('uploads the files of a font before the font, and keeps a font out of a quick push', async () => {
+            const fetchSpy = vi.fn(serverFetch)
+            const phone = createDevice({ fetch: fetchSpy })
+            await phone.engine.sync()
+            const regular = fontBytes('Mine')
+            await addFont(phone, makeFont('f-1', [regular]), [regular])
+
+            // The push when the page goes to the background has no time for the files.
+            await phone.engine.pushNow()
+            const sent = () =>
+                fetchSpy.mock.calls.map(([url, init]) => {
+                    if (url.includes('/v1/fonts/')) return `${init?.method ?? 'GET'} font file`
+                    if (init?.method === 'POST' && String(init.body).includes('"kind":"font"')) {
+                        return 'POST font'
+                    }
+                    return null
+                })
+            expect(sent().filter(Boolean)).toEqual([])
+
+            await phone.engine.sync()
+            expect(sent().filter(Boolean)).toEqual(['HEAD font file', 'PUT font file', 'POST font'])
+        })
+
+        it('refuses a damaged font file and asks for it again after a wait', async () => {
             const phone = createDevice()
             const regular = fontBytes('Mine')
             const hash = bytesHash(regular)

@@ -34,8 +34,11 @@ const MAX_COVERS = 50
 export const COVER_RETRY_MS = 60 * 60_000
 /** The largest number of font files that one run downloads. */
 const MAX_FONT_DOWNLOADS = 20
-/** A font file that the server did not have, or that was damaged, waits this time. */
-export const FONT_RETRY_MS = 60 * 60_000
+/**
+ * A font file that the server did not have, or that was damaged, waits this time. A device
+ * uploads a font file before the family, so a miss is rare.
+ */
+export const FONT_RETRY_MS = 10 * 60_000
 
 /** The kinds that this version syncs, when the server keeps them too. */
 export const APP_KINDS: readonly SyncRecordKind[] = [
@@ -150,6 +153,8 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
     const fontMisses = new Map<string, number>()
     /** True when the server of the last pull does not keep fonts. */
     let oldServer = false
+    /** The font uploads that this run tried already. */
+    const triedUploads = new Set<string>()
 
     function setStatus(next: Partial<SyncStatus>): void {
         status = { ...status, ...next }
@@ -174,11 +179,11 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
     }
 
     /** Sends the outbox. A change that lost on the server comes back and goes into storage. */
-    async function push({ keepalive = false } = {}): Promise<ApplyResult> {
+    async function push({ keepalive = false, fonts = true } = {}): Promise<ApplyResult> {
         const changed = emptyChanges()
         // A server refuses a whole push with a kind that it does not keep. The entries of
         // such a kind stay in the outbox until the server keeps it.
-        const kinds = kindsOf(await store.readState())
+        const kinds = kindsOf(await store.readState()).filter((kind) => fonts || kind !== 'font')
         for (let round = 0; round < MAX_PUSH_ROUNDS; round++) {
             const batch = await store.readOutbox(MAX_PUSH_CHANGES, kinds)
             await dropStale(batch)
@@ -323,9 +328,27 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
 
     async function uploadFiles(): Promise<void> {
         const kinds = kindsOf(await store.readState())
-        const { files, fontFiles } = await store.readOutbox(MAX_UPLOADS, kinds)
+        const { files } = await store.readOutbox(MAX_UPLOADS, kinds)
         for (const file of files) await tryUpload(file.entry, () => uploadFile(file))
-        for (const entry of fontFiles) await tryUpload(entry, () => uploadFontFile(entry))
+    }
+
+    /**
+     * Uploads the font files before the push, so a device that gets a family can also get its
+     * files. A book downloads only when it opens, so its file can come after its record.
+     */
+    async function uploadFontFiles(): Promise<void> {
+        const kinds = kindsOf(await store.readState())
+        if (!kinds.includes('font')) return
+        for (let round = 0; round < MAX_PUSH_ROUNDS; round++) {
+            const { fontFiles } = await store.readOutbox(MAX_UPLOADS, kinds)
+            const due = fontFiles.filter((entry) => !triedUploads.has(entry.id))
+            if (due.length === 0) return
+            for (const entry of due) {
+                await tryUpload(entry, () => uploadFontFile(entry))
+                // A failed upload waits for the next run, after the push.
+                triedUploads.add(entry.id)
+            }
+        }
     }
 
     async function downloadCovers(): Promise<ApplyResult> {
@@ -384,6 +407,8 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
         const state = await store.readState()
         // The first sync of this device sends each record of the library.
         if (!state) await store.seedOutbox()
+        triedUploads.clear()
+        await uploadFontFiles()
         const changed = await push()
         merge(changed, await pull())
         report(changed)
@@ -421,7 +446,8 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
         if (running) return running
         // A device that never synced has no state. Its first run sends all records.
         if (!(await store.readState())) return
-        report(await push({ keepalive: true }))
+        // A font goes in a full run, after its files.
+        report(await push({ keepalive: true, fonts: false }))
     }
 
     async function downloadFile(book: Pick<BookRecord, 'id' | 'fileHash'>): Promise<void> {
