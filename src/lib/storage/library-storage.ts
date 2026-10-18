@@ -445,9 +445,12 @@ export function createLibraryStorage(options: LibraryStorageOptions = {}): Libra
                 request: (store) => store.get(hash),
             }),
 
-        putFont: ({ record, files }) =>
-            database.run({
-                stores: ['fonts', 'fontFiles'],
+        putFont: ({ record, files }) => {
+            const tracked = tracking()
+            const stores: StoreName[] = ['fonts', 'fontFiles']
+            if (tracked) stores.push('outbox')
+            const written = database.run({
+                stores,
                 mode: 'readwrite',
                 failureMessage: 'Unable to save the font.',
                 work: (transaction) => {
@@ -462,28 +465,44 @@ export function createLibraryStorage(options: LibraryStorageOptions = {}): Libra
                             return
                         }
                         transaction.objectStore('fonts').put(record)
+                        const outbox = tracked ? transaction.objectStore('outbox') : null
+                        const change = { deleted: false, changedAt: record.updatedAt }
+                        outbox?.put(outboxEntry('font', record.id, change))
                         for (const { hash } of record.faces) {
                             const file = files.get(hash)
                             // The same hash is the same file, so a stored file stays as it is.
-                            if (file && !stored.has(hash)) fileStore.put(file, hash)
+                            if (!file || stored.has(hash)) continue
+                            fileStore.put(file, hash)
+                            outbox?.put(outboxEntry('fontFile', hash, change))
                         }
                         removeUnusedFontFiles(transaction, stored)
                     }
                 },
-            }),
+            })
+            return afterTracked(tracked, written)
+        },
 
-        deleteFont: (id) =>
-            database.run({
-                stores: ['fonts', 'fontFiles'],
+        deleteFont: (id) => {
+            const tracked = tracking()
+            const stores: StoreName[] = ['fonts', 'fontFiles']
+            if (tracked) stores.push('outbox')
+            const written = database.run({
+                stores,
                 mode: 'readwrite',
                 failureMessage: 'Unable to remove the font.',
                 work: (transaction) => {
                     transaction.objectStore('fonts').delete(id)
+                    if (tracked) {
+                        const change = { deleted: true, changedAt: now() }
+                        transaction.objectStore('outbox').put(outboxEntry('font', id, change))
+                    }
                     const keys = transaction.objectStore('fontFiles').getAllKeys()
                     keys.onsuccess = () =>
                         removeUnusedFontFiles(transaction, keys.result.map(String))
                 },
-            }),
+            })
+            return afterTracked(tracked, written)
+        },
 
         close: () => database.close(),
     }

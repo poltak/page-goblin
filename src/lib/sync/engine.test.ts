@@ -7,15 +7,17 @@ import { Blob as NodeBlob } from 'node:buffer'
 import { createHash } from 'node:crypto'
 import { IDBFactory } from 'fake-indexeddb'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { buildFont, familyNames } from '$lib/fonts/testing/build-font'
 import { createLibraryStorage, type LibraryFileStorage } from '$lib/storage/library-storage'
 import { createSyncStore, type ApplyResult } from '$lib/storage/sync-store'
-import type { BookmarkRecord, BookRecord, HighlightRecord } from '$lib/storage/types'
+import type { BookmarkRecord, BookRecord, FontRecord, HighlightRecord } from '$lib/storage/types'
+import { FIRST_KINDS } from '../../../sync-server/src/protocol'
 import { handleRequest, type Env } from '../../../sync-server/src/handler'
 import { createMemoryBucket } from '../../../sync-server/test/memory-bucket'
 import { createSqliteDatabase } from '../../../sync-server/test/sqlite-database'
 import { createSyncClient, setupServer } from './client'
 import { deriveToken } from './code'
-import { createSyncEngine, type SyncEngine } from './engine'
+import { createSyncEngine, FONT_RETRY_MS, type SyncEngine } from './engine'
 import { SyncError } from './types'
 
 const SERVER = 'https://sync.test.workers.dev'
@@ -77,6 +79,34 @@ function makeHighlight(id: string, bookId: string, changes: Partial<HighlightRec
     return highlight
 }
 
+/** A font file that passes the checks of the sync: a font signature and its own hash. */
+function fontBytes(name: string): Uint8Array<ArrayBuffer> {
+    return buildFont({ names: familyNames(name) })
+}
+
+function bytesHash(bytes: Uint8Array): string {
+    return createHash('sha256').update(bytes).digest('hex')
+}
+
+function makeFont(id: string, bytes: Uint8Array[], changes: Partial<FontRecord> = {}): FontRecord {
+    return {
+        id,
+        name: `Font ${id}`,
+        fallback: 'serif',
+        faces: bytes.map((data, index) => ({
+            hash: bytesHash(data),
+            format: 'truetype' as const,
+            weight: String(400 + index * 300),
+            style: 'normal' as const,
+            stretch: '100%',
+            size: data.length,
+        })),
+        addedAt: 1000,
+        updatedAt: 1000,
+        ...changes,
+    }
+}
+
 function makeBookmark(id: string, bookId: string): BookmarkRecord {
     return {
         id,
@@ -136,6 +166,47 @@ describe('createSyncEngine', () => {
         const device = { storage, engine, changes, clock }
         devices.push(device)
         return device
+    }
+
+    /**
+     * A server of the first version: it gives no list of kinds, refuses a push with a different
+     * kind, and has no fonts folder. `old.on` false makes it the current server again.
+     */
+    const old = { on: true }
+    const oldServerFetch = async (input: string, init: RequestInit = {}): Promise<Response> => {
+        if (!old.on) return serverFetch(input, init)
+        const url = new URL(input)
+        const method = init.method ?? 'GET'
+        if (url.pathname.startsWith('/v1/fonts/')) {
+            return Response.json({ error: 'No such address.', code: 'not-found' }, { status: 404 })
+        }
+        if (url.pathname === '/v1/changes' && method === 'POST') {
+            const { changes } = JSON.parse(String(init.body)) as { changes: { kind: string }[] }
+            if (changes.some((change) => !FIRST_KINDS.includes(change.kind as never))) {
+                return Response.json(
+                    { error: 'A change is not valid.', code: 'bad-request' },
+                    { status: 400 },
+                )
+            }
+        }
+        url.searchParams.delete('kinds')
+        const response = await serverFetch(url.toString(), init)
+        if (method !== 'GET' || !['/v1/changes', '/v1/status'].includes(url.pathname)) {
+            return response
+        }
+        const { kinds: _, ...body } = (await response.json()) as Record<string, unknown>
+        return Response.json(body, { status: response.status })
+    }
+
+    async function addFont(
+        device: Device,
+        font: FontRecord,
+        bytes: Uint8Array<ArrayBuffer>[],
+    ): Promise<void> {
+        const files = new Map(
+            bytes.map((data) => [bytesHash(data), new Blob([data], { type: 'font/ttf' })]),
+        )
+        await device.storage.putFont({ record: font, files })
     }
 
     async function addBook(device: Device, id: string, content: string): Promise<BookRecord> {
@@ -475,6 +546,117 @@ describe('createSyncEngine', () => {
         })
 
         await expect(device.engine.sync()).rejects.toMatchObject({ code: 'bad-response' })
+    })
+
+    describe('fonts', () => {
+        beforeEach(() => {
+            old.on = true
+        })
+
+        it('copies a font and its files to a second device', async () => {
+            const phone = createDevice()
+            const laptop = createDevice()
+            const regular = fontBytes('Mine')
+            const bold = fontBytes('Mine Bold')
+            const font = makeFont('f-1', [regular, bold])
+            await addFont(phone, font, [regular, bold])
+
+            await phone.engine.sync()
+            await laptop.engine.sync()
+
+            expect(await laptop.storage.listFonts()).toEqual([font])
+            const file = await laptop.storage.getFontFile(font.faces[1].hash)
+            expect(new Uint8Array(await file!.arrayBuffer())).toEqual(bold)
+            expect(file!.type).toBe('font/ttf')
+            expect(laptop.changes.some((change) => change.fonts)).toBe(true)
+            expect(laptop.engine.status.oldServer).toBe(false)
+            expect(bucket.keys().filter((key) => key.startsWith('fonts/'))).toHaveLength(2)
+        })
+
+        it('removes a font on the other device', async () => {
+            const phone = createDevice()
+            const laptop = createDevice()
+            const regular = fontBytes('Mine')
+            await addFont(phone, makeFont('f-1', [regular]), [regular])
+            await phone.engine.sync()
+            await laptop.engine.sync()
+
+            phone.clock.now = 20_000
+            await phone.storage.deleteFont('f-1')
+            await phone.engine.sync()
+            laptop.changes.length = 0
+            await laptop.engine.sync()
+
+            expect(await laptop.storage.listFonts()).toEqual([])
+            expect(await laptop.storage.getFontFile(bytesHash(regular))).toBeUndefined()
+            expect(laptop.changes.some((change) => change.fonts)).toBe(true)
+        })
+
+        it('keeps the fonts for a server that does not keep them, and sends them after its update', async () => {
+            const phone = createDevice({ fetch: oldServerFetch })
+            const regular = fontBytes('Mine')
+            await addFont(phone, makeFont('f-1', [regular]), [regular])
+            await addBook(phone, 'a', 'epub bytes of a')
+
+            await phone.engine.sync()
+
+            // The other data syncs, and the status asks for an update of the server.
+            expect(phone.engine.status).toMatchObject({ phase: 'idle', oldServer: true })
+            const laptop = createDevice()
+            await laptop.engine.sync()
+            expect((await laptop.storage.listBooks()).map((book) => book.title)).toEqual([
+                'Title a',
+            ])
+            expect(await laptop.storage.listFonts()).toEqual([])
+
+            old.on = false
+            await phone.engine.sync()
+            expect(phone.engine.status.oldServer).toBe(false)
+            await laptop.engine.sync()
+            expect((await laptop.storage.listFonts()).map((font) => font.id)).toEqual(['f-1'])
+        })
+
+        it('gets the fonts that the cursor of this device moved past before', async () => {
+            const phone = createDevice()
+            const regular = fontBytes('Mine')
+            await addFont(phone, makeFont('f-1', [regular]), [regular])
+            await phone.engine.sync()
+            // A later book moves the cursor of an older device past the font.
+            await addBook(phone, 'a', 'epub bytes of a')
+            await phone.engine.sync()
+
+            const laptop = createDevice({ fetch: oldServerFetch })
+            await laptop.engine.sync()
+            expect((await laptop.storage.listBooks()).map((book) => book.title)).toEqual([
+                'Title a',
+            ])
+            expect(await laptop.storage.listFonts()).toEqual([])
+
+            old.on = false
+            await laptop.engine.sync()
+            expect((await laptop.storage.listFonts()).map((font) => font.id)).toEqual(['f-1'])
+        })
+
+        it('refuses a damaged font file and asks for it again after an hour', async () => {
+            const phone = createDevice()
+            const regular = fontBytes('Mine')
+            const hash = bytesHash(regular)
+            await addFont(phone, makeFont('f-1', [regular]), [regular])
+            await phone.engine.sync()
+            await bucket.put(`fonts/${hash}`, fontBytes('Other').buffer)
+
+            const laptop = createDevice()
+            await laptop.engine.sync()
+            expect(await laptop.storage.listFonts()).toEqual([])
+
+            await bucket.put(`fonts/${hash}`, regular.buffer)
+            await laptop.engine.sync()
+            expect(await laptop.storage.listFonts()).toEqual([])
+
+            laptop.clock.now += FONT_RETRY_MS
+            await laptop.engine.sync()
+            expect((await laptop.storage.listFonts()).map((font) => font.id)).toEqual(['f-1'])
+        })
     })
 
     it('runs one more time for a call during a run', async () => {

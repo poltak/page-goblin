@@ -140,22 +140,23 @@ export interface NewFont {
 }
 
 /** A kind of record that the sync copies between devices. */
-export type SyncRecordKind = 'book' | 'progress' | 'bookmark' | 'highlight'
+export type SyncRecordKind = 'book' | 'progress' | 'bookmark' | 'highlight' | 'font'
 
 /**
  * One change on this device that the sync did not send yet. The storage writes it in the same
  * transaction as the change, and only while the sync is on.
  *
- * Kind 'file' asks the sync to upload the file and the cover of a book.
+ * Kind 'file' asks the sync to upload the file and the cover of a book. Kind 'fontFile' asks it
+ * to upload a font file. Its key is the SHA-256 of the file.
  */
 export interface OutboxEntry {
     /** `${kind}:${key}`. A later change of the same record replaces the entry. */
     id: string
-    kind: SyncRecordKind | 'file'
+    kind: SyncRecordKind | 'file' | 'fontFile'
     /**
      * The key of the record on all devices. A book has a different `id` on each device, so a
-     * book, its progress and its file use the file hash. A bookmark and a highlight use their
-     * own id.
+     * book, its progress and its file use the file hash. A bookmark, a highlight and a font
+     * use their own id.
      */
     key: string
     deleted: boolean
@@ -173,12 +174,15 @@ export type SyncBookValue = Omit<BookRecord, 'id' | 'remoteOnly'>
 export type SyncProgressValue = Omit<ProgressRecord, 'bookId'> & { fileHash: string }
 export type SyncBookmarkValue = Omit<BookmarkRecord, 'bookId'> & { fileHash: string }
 export type SyncHighlightValue = Omit<HighlightRecord, 'bookId'> & { fileHash: string }
+/** A font family has the same id on all devices. The key of the change is that id. */
+export type SyncFontValue = Omit<FontRecord, 'id'>
 
 export interface SyncValues {
     book: SyncBookValue
     progress: SyncProgressValue
     bookmark: SyncBookmarkValue
     highlight: SyncHighlightValue
+    font: SyncFontValue
 }
 
 /** A record as the sync sends and receives it. `key` is the key of `OutboxEntry`. */
@@ -201,6 +205,12 @@ export interface SyncState {
     account: string
     /** The sequence number of the last server change that this device has. */
     cursor: number
+    /**
+     * The kinds that the cursor covers: the kinds that this device and the server both keep,
+     * at the last pull. A state with no list covers the first four kinds. The sync sends only
+     * these kinds, because a server refuses a whole push with a kind that it does not keep.
+     */
+    kinds?: SyncRecordKind[]
 }
 
 /** Tells the storage when to write the outbox. */

@@ -15,7 +15,15 @@ import {
     parseLocator,
     SHA_256_HEX,
 } from '$lib/annotations/backup'
-import type { SpineStats, SyncBookValue, SyncItem } from '$lib/storage/types'
+import { MAX_FONT_FACES, MAX_FONT_FILE_BYTES } from '$lib/fonts/import'
+import { cleanFontName } from '$lib/fonts/sfnt'
+import type {
+    FontFaceRecord,
+    SpineStats,
+    SyncBookValue,
+    SyncFontValue,
+    SyncItem,
+} from '$lib/storage/types'
 import type { Change, StoredChange } from './types'
 
 /**
@@ -116,13 +124,90 @@ function parseBook(raw: unknown, fileHash: string): SyncBookValue | null {
     }
 }
 
+/**
+ * The id of a font family. The CSS family name of its faces has the id, so it can have only
+ * the characters of a CSS name. The app makes UUIDs.
+ */
+export const FONT_ID = /^[A-Za-z0-9_-]{1,64}$/
+
+const FONT_FORMATS = new Set(['truetype', 'opentype', 'woff', 'woff2'])
+const FONT_FALLBACKS = new Set(['serif', 'sans-serif', 'monospace'])
+const FONT_STYLES = new Set(['normal', 'italic'])
+const FONT_WEIGHT = /^(\d{1,4})(?: (\d{1,4}))?$/
+const FONT_STRETCH = /^(\d{1,3}(?:\.\d)?)%(?: (\d{1,3}(?:\.\d)?)%)?$/
+
+/** True for a CSS value with one number or two numbers from low to high, in a range. */
+function isRange(match: RegExpExecArray | null, min: number, max: number): boolean {
+    if (!match) return false
+    const low = Number(match[1])
+    const high = match[2] === undefined ? low : Number(match[2])
+    return low >= min && high <= max && low <= high
+}
+
+function parseFace(raw: unknown): FontFaceRecord | null {
+    if (!isRecord(raw)) return null
+    const { hash, format, weight, style, stretch, size } = raw
+    const valid =
+        typeof hash === 'string' &&
+        SHA_256_HEX.test(hash) &&
+        typeof format === 'string' &&
+        FONT_FORMATS.has(format) &&
+        typeof weight === 'string' &&
+        isRange(FONT_WEIGHT.exec(weight), 1, 1000) &&
+        typeof style === 'string' &&
+        FONT_STYLES.has(style) &&
+        typeof stretch === 'string' &&
+        isRange(FONT_STRETCH.exec(stretch), 50, 200) &&
+        isCount(size) &&
+        size <= MAX_FONT_FILE_BYTES
+    if (!valid) return null
+    return {
+        hash,
+        format: format as FontFaceRecord['format'],
+        weight,
+        style: style as FontFaceRecord['style'],
+        stretch,
+        size,
+    }
+}
+
+/** Names each field. The name is text for the page, so it is cleaned as a name from a file. */
+function parseFont(raw: Record<string, unknown>): SyncFontValue | null {
+    const { name, fallback, faces, addedAt, updatedAt } = raw
+    if (typeof name !== 'string' || typeof fallback !== 'string') return null
+    if (!FONT_FALLBACKS.has(fallback) || !isTime(addedAt) || !isTime(updatedAt)) return null
+    if (!Array.isArray(faces) || faces.length === 0 || faces.length > MAX_FONT_FACES) return null
+    const parsed: FontFaceRecord[] = []
+    for (const face of faces) {
+        const value = parseFace(face)
+        if (!value) return null
+        parsed.push(value)
+    }
+    const cleanName = cleanFontName(name)
+    if (!cleanName) return null
+    return {
+        name: cleanName,
+        fallback: fallback as SyncFontValue['fallback'],
+        faces: parsed,
+        addedAt,
+        updatedAt,
+    }
+}
+
 /** The record of a change from the server, or null when the change is not valid. */
 export function fromChange(change: StoredChange): SyncItem | null {
     const { kind, key, updatedAt, deleted } = change
     // The server can keep kinds that this version does not use.
-    if (kind !== 'book' && kind !== 'progress' && kind !== 'bookmark' && kind !== 'highlight') {
+    if (
+        kind !== 'book' &&
+        kind !== 'progress' &&
+        kind !== 'bookmark' &&
+        kind !== 'highlight' &&
+        kind !== 'font'
+    ) {
         return null
     }
+    if (kind === 'font' && !FONT_ID.test(key)) return null
     if (deleted) return { kind, key, updatedAt, deleted: true, value: null }
     // A later version of the app can write a format that this version cannot read.
     if (change.format !== DATA_FORMAT || change.data === null) return null
@@ -137,6 +222,10 @@ export function fromChange(change: StoredChange): SyncItem | null {
     if (kind === 'book') {
         if (!SHA_256_HEX.test(key)) return null
         const value = parseBook(raw, key)
+        return value && { kind, key, updatedAt, deleted: false, value }
+    }
+    if (kind === 'font') {
+        const value = parseFont(raw)
         return value && { kind, key, updatedAt, deleted: false, value }
     }
 

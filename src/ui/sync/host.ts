@@ -148,7 +148,8 @@ export function createSyncHost(options: SyncHostOptions): SyncHost {
             if (target) {
                 const { createSyncStore } = await import('$lib/storage/sync-store')
                 const removed = await createSyncStore(target.database).reset()
-                options.onChanges({ books: removed, progress: [], annotations: [] })
+                // The reset also removes the fonts that did not download.
+                options.onChanges({ books: removed, progress: [], annotations: [], fonts: true })
             }
             setStatus(IDLE)
         },

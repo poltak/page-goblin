@@ -16,7 +16,8 @@ export const MAX_FONT_FILE_BYTES = 25 * 1024 * 1024
 /** The largest number of files in one family. A family needs 4 files for most books. */
 export const MAX_FONT_FACES = 16
 
-const MEDIA_TYPES: Record<FontFormat, string> = {
+/** The media type of each format, for the Blob of a stored font file. */
+export const FONT_MEDIA_TYPES: Record<FontFormat, string> = {
     truetype: 'font/ttf',
     opentype: 'font/otf',
     woff: 'font/woff',
@@ -166,7 +167,7 @@ export async function readFontFile(
             stretch: info.stretch,
             size: bytes.byteLength,
         },
-        blob: new Blob([bytes], { type: MEDIA_TYPES[info.format] }),
+        blob: new Blob([bytes], { type: FONT_MEDIA_TYPES[info.format] }),
     }
 }
 

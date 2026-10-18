@@ -112,6 +112,12 @@ describe('statusText', () => {
             'The last sync did not complete. The sync server did not answer.',
         )
     })
+
+    it('asks for an update of a server that does not keep fonts', () => {
+        expect(statusText({ phase: 'idle', syncedAt: null, error: null, oldServer: true })).toBe(
+            'Sync is on. Your sync server does not keep fonts. Update it to sync your fonts.',
+        )
+    })
 })
 
 describe('createSyncDialog', () => {

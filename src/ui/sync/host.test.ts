@@ -146,7 +146,12 @@ describe('createSyncHost', () => {
         expect(readSyncConfig()).toBeNull()
         expect(host.isOn()).toBe(false)
         expect((await storage.listBooks()).map((book) => book.id)).toEqual(['a'])
-        expect(onChanges).toHaveBeenCalledWith({ books: ['b'], progress: [], annotations: [] })
+        expect(onChanges).toHaveBeenCalledWith({
+            books: ['b'],
+            progress: [],
+            annotations: [],
+            fonts: true,
+        })
     })
 
     it('shows one toast for a wrong sync code, and tells the status listeners', async () => {

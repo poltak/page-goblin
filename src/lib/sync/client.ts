@@ -3,8 +3,12 @@
  */
 
 import { isRecord } from '$lib/annotations/backup'
-import { DEFAULT_PULL_CHANGES, parseStoredChange } from '../../../sync-server/src/protocol'
-import type { ErrorCode, SetupRequest } from '../../../sync-server/src/protocol'
+import {
+    DEFAULT_PULL_CHANGES,
+    parseKinds,
+    parseStoredChange,
+} from '../../../sync-server/src/protocol'
+import type { ChangeKind, ErrorCode, SetupRequest } from '../../../sync-server/src/protocol'
 import { SyncError } from './types'
 import type {
     BlobTarget,
@@ -29,6 +33,8 @@ const RASTER_TYPES = new Set([
     'image/avif',
     'image/bmp',
 ])
+// The types that the font import stores. See src/lib/fonts/import.ts.
+const FONT_TYPES = new Set(['font/ttf', 'font/otf', 'font/woff', 'font/woff2'])
 
 type Fetch = (input: string, init?: RequestInit) => Promise<Response>
 
@@ -120,6 +126,11 @@ function parseAccount(body: unknown): string {
     return account
 }
 
+/** The list of kinds in an answer, or undefined for a server that gives no list. */
+function kindsOf(body: Record<string, unknown>): ChangeKind[] | undefined {
+    return Array.isArray(body.kinds) ? parseKinds(body.kinds) : undefined
+}
+
 function parseChanges(raw: unknown): StoredChange[] {
     if (!Array.isArray(raw)) throw badResponse()
     return raw.map((item) => {
@@ -174,11 +185,16 @@ export function createSyncClient(options: SyncClientOptions): SyncBackend {
     return {
         async status() {
             const response = await requireFound(await request('/v1/status'))
-            return { account: parseAccount(await readJson(response)) }
+            const body = await readJson(response)
+            const result: StatusResponse = { account: parseAccount(body) }
+            const kinds = isRecord(body) ? kindsOf(body) : undefined
+            if (kinds) result.kinds = kinds
+            return result
         },
 
-        async pull({ since, limit = DEFAULT_PULL_CHANGES }) {
+        async pull({ since, limit = DEFAULT_PULL_CHANGES, kinds }) {
             const query = new URLSearchParams({ since: String(since), limit: String(limit) })
+            if (kinds) query.set('kinds', kinds.join(','))
             const response = await requireFound(await request(`/v1/changes?${query}`))
             const body = await readJson(response)
             if (!isRecord(body)) throw badResponse()
@@ -190,6 +206,8 @@ export function createSyncClient(options: SyncClientOptions): SyncBackend {
                 cursor: cursor as number,
                 more,
             }
+            const serverKinds = kindsOf(body)
+            if (serverKinds) result.kinds = serverKinds
             return result
         },
 
@@ -218,6 +236,7 @@ export function createSyncClient(options: SyncClientOptions): SyncBackend {
             const type =
                 target.folder === 'files' ? 'application/epub+zip' : blob.type.toLowerCase()
             if (target.folder === 'covers' && !RASTER_TYPES.has(type)) return
+            if (target.folder === 'fonts' && !FONT_TYPES.has(type)) return
             await requireFound(
                 await request(blobPath(target), {
                     method: 'PUT',
@@ -232,6 +251,8 @@ export function createSyncClient(options: SyncClientOptions): SyncBackend {
             if (response.status === 404) return null
             const blob = await response.blob()
             if (target.folder === 'files') return new Blob([blob], { type: 'application/epub+zip' })
+            // The sync checks the hash and the format of a font before it stores it.
+            if (target.folder === 'fonts') return blob
             // A cover goes into an img element. Only a raster image can go there.
             const type = (response.headers.get('Content-Type') ?? '').split(';')[0].trim()
             return RASTER_TYPES.has(type) ? new Blob([blob], { type }) : null

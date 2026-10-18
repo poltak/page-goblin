@@ -31,6 +31,7 @@ const sync = createSyncHost({
         void library.applySyncChanges(changes.books)
         for (const progress of changes.progress) readerHost.offerPosition(progress)
         for (const bookId of changes.annotations) readerHost.annotationsChanged(bookId)
+        if (changes.fonts) readerHost.fontsChanged()
     },
 })
 const storage = createLibraryStorage({ changes: sync.tracker })

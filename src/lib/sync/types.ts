@@ -7,7 +7,9 @@
 
 import type { ApplyResult } from '$lib/storage/sync-store'
 import type {
+    BlobFolder,
     Change,
+    ChangeKind,
     PullResponse,
     PushResponse,
     StatusResponse,
@@ -29,16 +31,24 @@ export interface SyncConfig {
     code: string
 }
 
-/** A file or a cover on the server. Both have the file hash of the book as their name. */
+/**
+ * A file on the server. A book file and a cover have the file hash of the book as their
+ * name, and a font file has its own SHA-256.
+ */
 export interface BlobTarget {
-    folder: 'files' | 'covers'
+    folder: BlobFolder
     hash: string
 }
 
 /** The server as the sync engine sees it. A test can give a different implementation. */
 export interface SyncBackend {
     status(): Promise<StatusResponse>
-    pull(options: { since: number; limit?: number }): Promise<PullResponse>
+    /** Without `kinds`, the server gives the kinds of its first version. */
+    pull(options: {
+        since: number
+        limit?: number
+        kinds?: readonly ChangeKind[]
+    }): Promise<PullResponse>
     /** With `keepalive` the request continues after the page closes. Only for small bodies. */
     push(changes: Change[], options?: { keepalive?: boolean }): Promise<PushResponse>
     hasBlob(target: BlobTarget): Promise<boolean>
@@ -88,6 +98,8 @@ export interface SyncStatus {
     syncedAt: number | null
     /** The error of the last sync, when it failed. */
     error: SyncError | null
+    /** True when the server of the last sync does not keep fonts. The other data syncs. */
+    oldServer?: boolean
 }
 
 /** What a sync changed in the library of this device. */

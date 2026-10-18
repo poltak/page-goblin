@@ -739,6 +739,48 @@ describe('createLibraryStorage', () => {
         })
     })
 
+    describe('font changes for the sync', () => {
+        it('writes the family and its new files to the outbox, and a delete', async () => {
+            storage.close()
+            storage = createLibraryStorage({
+                indexedDB: tracked.factory,
+                changes: { isOn: () => true, onChange: () => {} },
+                now: () => 9000,
+            })
+            const read = () =>
+                storage.database.run<OutboxEntry[]>({
+                    stores: 'outbox',
+                    mode: 'readonly',
+                    failureMessage: 'Unable to read.',
+                    work: (transaction) => {
+                        const request = transaction.objectStore('outbox').getAll()
+                        return () => request.result as OutboxEntry[]
+                    },
+                })
+
+            await storage.putFont({ record: makeFont('f', ['r']), files: fontFiles('r') })
+            await storage.putFont({
+                record: makeFont('f', ['r', 'b'], { updatedAt: 6000 }),
+                files: fontFiles('r', 'b'),
+            })
+            expect(await read()).toEqual([
+                { id: 'font:f', kind: 'font', key: 'f', deleted: false, changedAt: 6000 },
+                // The file that was there already does not upload again.
+                { id: 'fontFile:b', kind: 'fontFile', key: 'b', deleted: false, changedAt: 6000 },
+                { id: 'fontFile:r', kind: 'fontFile', key: 'r', deleted: false, changedAt: 5000 },
+            ])
+
+            await storage.deleteFont('f')
+            expect((await read()).find((entry) => entry.id === 'font:f')).toEqual({
+                id: 'font:f',
+                kind: 'font',
+                key: 'f',
+                deleted: true,
+                changedAt: 9000,
+            })
+        })
+    })
+
     describe('connection', () => {
         it('opens the database again after close()', async () => {
             await addBook('a')

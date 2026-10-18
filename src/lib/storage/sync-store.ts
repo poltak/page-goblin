@@ -7,14 +7,16 @@
 
 import { createId } from './crypto'
 import type { Database, StoreName } from './db'
-import { outboxEntry, withFile } from './library-storage'
+import { outboxEntry, removeUnusedFontFiles, withFile } from './library-storage'
 import type {
     BookmarkRecord,
     BookRecord,
+    FontRecord,
     HighlightRecord,
     OutboxEntry,
     ProgressRecord,
     SyncBookValue,
+    SyncFontValue,
     SyncItem,
     SyncRecordKind,
     SyncState,
@@ -33,7 +35,20 @@ const KIND_ORDER: Record<OutboxEntry['kind'], number> = {
     progress: 2,
     bookmark: 3,
     highlight: 4,
+    font: 5,
+    fontFile: 6,
 }
+
+/** The kinds of outbox entry that are uploads of files and not records. */
+const UPLOAD_KINDS = new Set<OutboxEntry['kind']>(['file', 'fontFile'])
+
+/** The kinds that a server with no list of kinds keeps. */
+export const FIRST_SYNC_KINDS: readonly SyncRecordKind[] = [
+    'book',
+    'progress',
+    'bookmark',
+    'highlight',
+]
 
 export interface OutboxFile {
     entry: OutboxEntry
@@ -46,6 +61,8 @@ export interface OutboxBatch {
     changes: { entry: OutboxEntry; item: SyncItem }[]
     /** The books whose file and cover must go to the server. */
     files: OutboxFile[]
+    /** The font files that must go to the server. The key of each entry is the hash. */
+    fontFiles: OutboxEntry[]
     /** Entries whose record is not in the library any more. Remove them. */
     stale: OutboxEntry[]
 }
@@ -57,6 +74,8 @@ export interface ApplyResult {
     progress: ProgressRecord[]
     /** Local ids of the books whose bookmarks or highlights changed. */
     annotations: string[]
+    /** True when a font family or a font file changed. */
+    fonts?: boolean
 }
 
 export interface ApplyRemoteOptions {
@@ -72,9 +91,11 @@ export interface SyncStore {
     seedOutbox(): Promise<void>
     /**
      * The first `limit` record entries of the outbox, books first, with the values of their
-     * records. Also the first `limit` file entries, the oldest first.
+     * records. Also the first `limit` file entries, the oldest first. Only the entries of
+     * `kinds` come. The other entries stay for a server that keeps their kind. The default is
+     * each kind.
      */
-    readOutbox(limit: number): Promise<OutboxBatch>
+    readOutbox(limit: number, kinds?: readonly SyncRecordKind[]): Promise<OutboxBatch>
     /** Moves a file entry to the end of the uploads, after an upload that failed. */
     postponeUpload(entry: OutboxEntry, now: number): Promise<void>
     /** Removes the entries that did not change since `readOutbox`. */
@@ -84,6 +105,10 @@ export interface SyncStore {
     /** Writes a file from the server. The book then has its file on this device. */
     storeFile(bookId: string, file: Blob): Promise<void>
     storeCover(bookId: string, cover: Blob): Promise<void>
+    /** Writes a font file from the server. Does nothing when no font family uses it. */
+    storeFontFile(hash: string, file: Blob): Promise<void>
+    /** The hashes of the font files that families use and that are not on this device. */
+    missingFontFiles(): Promise<string[]>
     /** The books that have a cover on the server and not on this device. */
     booksWithoutCover(): Promise<BookRecord[]>
     /**
@@ -92,8 +117,9 @@ export interface SyncStore {
      */
     removeDownload(bookId: string): Promise<boolean>
     /**
-     * Ends the sync on this device: removes the state and the books that have no file here.
-     * The outbox stays. Resolves with the ids of the removed books.
+     * Ends the sync on this device: removes the state, the books that have no file here and
+     * the font families that do not have all their files here. The outbox stays. Resolves
+     * with the ids of the removed books.
      */
     reset(): Promise<string[]>
 }
@@ -163,6 +189,18 @@ function syncBook(book: BookRecord): SyncBookValue {
     return value
 }
 
+function syncFont(font: FontRecord): SyncFontValue {
+    const { id: _, ...value } = font
+    return value
+}
+
+/** The kind of record that an outbox entry needs the server to keep. */
+function recordKindOf(kind: OutboxEntry['kind']): SyncRecordKind {
+    if (kind === 'file') return 'book'
+    if (kind === 'fontFile') return 'font'
+    return kind
+}
+
 function liveItem<K extends SyncRecordKind>(
     kind: K,
     key: string,
@@ -215,21 +253,29 @@ const ALL_STORES: StoreName[] = [
     'highlights',
     'outbox',
     'syncState',
+    'fonts',
+    'fontFiles',
 ]
 
 export function createSyncStore(database: Database): SyncStore {
-    async function readOutboxIn(transaction: IDBTransaction, limit: number): Promise<OutboxBatch> {
+    async function readOutboxIn(
+        transaction: IDBTransaction,
+        limit: number,
+        kinds: readonly SyncRecordKind[] | undefined,
+    ): Promise<OutboxBatch> {
         const outbox = transaction.objectStore('outbox')
         const books = bookFinder(transaction.objectStore('books'))
-        const all = await resultOf<OutboxEntry[]>(outbox.getAll())
+        const all = (await resultOf<OutboxEntry[]>(outbox.getAll())).filter(
+            (entry) => !kinds || kinds.includes(recordKindOf(entry.kind)),
+        )
         // Records and files have their own limit, so many waiting uploads cannot hold back a
         // reading position. The file that waited longest comes first.
-        const records = all.filter((entry) => entry.kind !== 'file').sort(byKind)
+        const records = all.filter((entry) => !UPLOAD_KINDS.has(entry.kind)).sort(byKind)
         const uploads = all
-            .filter((entry) => entry.kind === 'file')
+            .filter((entry) => UPLOAD_KINDS.has(entry.kind))
             .sort((a, b) => a.changedAt - b.changedAt)
         const entries = [...records.slice(0, limit), ...uploads.slice(0, limit)]
-        const batch: OutboxBatch = { changes: [], files: [], stale: [] }
+        const batch: OutboxBatch = { changes: [], files: [], fontFiles: [], stale: [] }
 
         for (const entry of entries) {
             const { kind, key, changedAt: updatedAt } = entry
@@ -237,6 +283,12 @@ export function createSyncStore(database: Database): SyncStore {
                 const book = await books.find(key)
                 if (!book || book.remoteOnly) batch.stale.push(entry)
                 else batch.files.push({ entry, bookId: book.id, hasCover: book.hasCover })
+                continue
+            }
+            if (kind === 'fontFile') {
+                const file = await resultOf(transaction.objectStore('fontFiles').getKey(key))
+                if (file === undefined) batch.stale.push(entry)
+                else batch.fontFiles.push(entry)
                 continue
             }
             if (entry.deleted) {
@@ -251,6 +303,11 @@ export function createSyncStore(database: Database): SyncStore {
             if (kind === 'book') {
                 const book = await books.find(key)
                 if (book) item = liveItem(kind, key, updatedAt, syncBook(book))
+            } else if (kind === 'font') {
+                const font = await resultOf<FontRecord | undefined>(
+                    transaction.objectStore('fonts').get(key),
+                )
+                if (font) item = liveItem(kind, key, updatedAt, syncFont(font))
             } else if (kind === 'progress') {
                 const book = await books.find(key)
                 const progress = book
@@ -294,6 +351,7 @@ export function createSyncStore(database: Database): SyncStore {
         const changedBooks = new Set<string>()
         const annotations = new Set<string>()
         const progress: ProgressRecord[] = []
+        let fonts = false
 
         for (const item of [...items].sort(byKind)) {
             const pendingId = `${item.kind}:${item.key}`
@@ -332,6 +390,28 @@ export function createSyncStore(database: Database): SyncStore {
                     books.set(item.key, record)
                     changedBooks.add(record.id)
                 }
+                continue
+            }
+
+            if (item.kind === 'font') {
+                const store = transaction.objectStore('fonts')
+                const current = await resultOf<FontRecord | undefined>(store.get(item.key))
+                if (item.deleted) {
+                    if (!current) continue
+                    store.delete(item.key)
+                } else {
+                    if (current && current.updatedAt > item.value.updatedAt) continue
+                    const record: FontRecord = { ...item.value, id: item.key }
+                    if (JSON.stringify(record) === JSON.stringify(current)) continue
+                    store.put(record)
+                }
+                // The files of the faces that the family does not have now.
+                if (current)
+                    removeUnusedFontFiles(
+                        transaction,
+                        current.faces.map((f) => f.hash),
+                    )
+                fonts = true
                 continue
             }
 
@@ -377,7 +457,7 @@ export function createSyncStore(database: Database): SyncStore {
         }
 
         if (state) transaction.objectStore('syncState').put(state, STATE_KEY)
-        return { books: [...changedBooks], progress, annotations: [...annotations] }
+        return { books: [...changedBooks], progress, annotations: [...annotations], fonts }
     }
 
     return {
@@ -404,18 +484,35 @@ export function createSyncStore(database: Database): SyncStore {
 
         seedOutbox: () =>
             runAsync(database, {
-                stores: ['books', 'progress', 'bookmarks', 'highlights', 'outbox'],
+                stores: [
+                    'books',
+                    'progress',
+                    'bookmarks',
+                    'highlights',
+                    'fonts',
+                    'fontFiles',
+                    'outbox',
+                ],
                 mode: 'readwrite',
                 failureMessage: 'Unable to prepare the sync.',
                 body: async (transaction) => {
                     const outbox = transaction.objectStore('outbox')
-                    const [books, progress, bookmarks, highlights, keys] = await Promise.all([
-                        resultOf<BookRecord[]>(transaction.objectStore('books').getAll()),
-                        resultOf<ProgressRecord[]>(transaction.objectStore('progress').getAll()),
-                        resultOf<BookmarkRecord[]>(transaction.objectStore('bookmarks').getAll()),
-                        resultOf<HighlightRecord[]>(transaction.objectStore('highlights').getAll()),
-                        resultOf(outbox.getAllKeys()),
-                    ])
+                    const [books, progress, bookmarks, highlights, fonts, fontFiles, keys] =
+                        await Promise.all([
+                            resultOf<BookRecord[]>(transaction.objectStore('books').getAll()),
+                            resultOf<ProgressRecord[]>(
+                                transaction.objectStore('progress').getAll(),
+                            ),
+                            resultOf<BookmarkRecord[]>(
+                                transaction.objectStore('bookmarks').getAll(),
+                            ),
+                            resultOf<HighlightRecord[]>(
+                                transaction.objectStore('highlights').getAll(),
+                            ),
+                            resultOf<FontRecord[]>(transaction.objectStore('fonts').getAll()),
+                            resultOf(transaction.objectStore('fontFiles').getAllKeys()),
+                            resultOf(outbox.getAllKeys()),
+                        ])
                     const known = new Set(keys.map(String))
                     const add = (kind: OutboxEntry['kind'], key: string, changedAt: number) => {
                         const entry = outboxEntry(kind, key, { deleted: false, changedAt })
@@ -437,15 +534,25 @@ export function createSyncStore(database: Database): SyncStore {
                     for (const record of highlights) {
                         if (hashes.has(record.bookId)) add('highlight', record.id, record.updatedAt)
                     }
+                    for (const font of fonts) add('font', font.id, font.updatedAt)
+                    for (const hash of fontFiles) add('fontFile', String(hash), 0)
                 },
             }),
 
-        readOutbox: (limit) =>
+        readOutbox: (limit, kinds) =>
             runAsync(database, {
-                stores: ['outbox', 'books', 'progress', 'bookmarks', 'highlights'],
+                stores: [
+                    'outbox',
+                    'books',
+                    'progress',
+                    'bookmarks',
+                    'highlights',
+                    'fonts',
+                    'fontFiles',
+                ],
                 mode: 'readonly',
                 failureMessage: 'Unable to read the changes for the sync.',
-                body: (transaction) => readOutboxIn(transaction, limit),
+                body: (transaction) => readOutboxIn(transaction, limit, kinds),
             }),
 
         postponeUpload: (entry, now) =>
@@ -517,6 +624,41 @@ export function createSyncStore(database: Database): SyncStore {
                 },
             }),
 
+        storeFontFile: (hash, file) =>
+            runAsync(database, {
+                stores: ['fonts', 'fontFiles'],
+                mode: 'readwrite',
+                failureMessage: 'Unable to save the font file.',
+                body: async (transaction) => {
+                    const fonts = await resultOf<FontRecord[]>(
+                        transaction.objectStore('fonts').getAll(),
+                    )
+                    // The family can be gone since the download started.
+                    if (fonts.some((font) => font.faces.some((face) => face.hash === hash))) {
+                        transaction.objectStore('fontFiles').put(file, hash)
+                    }
+                },
+            }),
+
+        missingFontFiles: () =>
+            runAsync(database, {
+                stores: ['fonts', 'fontFiles'],
+                mode: 'readonly',
+                failureMessage: 'Unable to read the fonts.',
+                body: async (transaction) => {
+                    const [fonts, keys] = await Promise.all([
+                        resultOf<FontRecord[]>(transaction.objectStore('fonts').getAll()),
+                        resultOf(transaction.objectStore('fontFiles').getAllKeys()),
+                    ])
+                    const present = new Set(keys.map(String))
+                    const missing = new Set<string>()
+                    for (const font of fonts) {
+                        for (const { hash } of font.faces) if (!present.has(hash)) missing.add(hash)
+                    }
+                    return [...missing]
+                },
+            }),
+
         booksWithoutCover: () =>
             runAsync(database, {
                 stores: ['books', 'covers'],
@@ -569,6 +711,19 @@ export function createSyncStore(database: Database): SyncStore {
                         await deleteLocalBook(transaction, book.id)
                         removed.push(book.id)
                     }
+                    // A family with a file that did not download cannot show.
+                    const fontStore = transaction.objectStore('fonts')
+                    const [fonts, keys] = await Promise.all([
+                        resultOf<FontRecord[]>(fontStore.getAll()),
+                        resultOf(transaction.objectStore('fontFiles').getAllKeys()),
+                    ])
+                    const present = new Set(keys.map(String))
+                    for (const font of fonts) {
+                        if (!font.faces.every((face) => present.has(face.hash))) {
+                            fontStore.delete(font.id)
+                        }
+                    }
+                    removeUnusedFontFiles(transaction, present)
                     return removed
                 },
             }),

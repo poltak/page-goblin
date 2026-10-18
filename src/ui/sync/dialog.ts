@@ -47,8 +47,12 @@ export function statusText(status: SyncStatus): string {
     if (status.phase === 'error' && status.error) {
         return `The last sync did not complete. ${status.error.message}`
     }
-    if (status.syncedAt === null) return 'Sync is on.'
-    return `Sync is on. Last sync at ${TIME_FORMAT.format(status.syncedAt)}.`
+    // People run their own copy of the server, so it can be older than the app.
+    const update = status.oldServer
+        ? ' Your sync server does not keep fonts. Update it to sync your fonts.'
+        : ''
+    if (status.syncedAt === null) return `Sync is on.${update}`
+    return `Sync is on. Last sync at ${TIME_FORMAT.format(status.syncedAt)}.${update}`
 }
 
 function messageOf(error: unknown): string {

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import type { SyncBookValue, SyncItem } from '$lib/storage/types'
+import { MAX_FONT_FILE_BYTES } from '$lib/fonts/import'
+import type { SyncBookValue, SyncFontValue, SyncItem } from '$lib/storage/types'
+import { MAX_FONT_BYTES } from '../../../sync-server/src/protocol'
 import { fromChange, toChange } from './records'
 import type { StoredChange } from './types'
 
@@ -26,6 +28,38 @@ function book(changes: Partial<SyncBookValue> = {}): SyncBookValue {
         addedAt: 1000,
         lastOpenedAt: null,
         ...changes,
+    }
+}
+
+function font(changes: Partial<SyncFontValue> = {}): SyncFontValue {
+    return {
+        name: 'My Font',
+        fallback: 'sans-serif',
+        faces: [
+            {
+                hash: HASH,
+                format: 'woff2',
+                weight: '100 900',
+                style: 'italic',
+                stretch: '75% 100%',
+                size: 2000,
+            },
+        ],
+        addedAt: 1000,
+        updatedAt: 2000,
+        ...changes,
+    }
+}
+
+function fontChange(value: unknown, key = 'f-1'): StoredChange {
+    return {
+        kind: 'font',
+        key,
+        updatedAt: 2000,
+        deleted: false,
+        format: 1,
+        data: JSON.stringify(value),
+        seq: 1,
     }
 }
 
@@ -85,6 +119,8 @@ describe('records', () => {
                 },
             },
             { kind: 'highlight', key: 'h2', updatedAt: 5000, deleted: true, value: null },
+            { kind: 'font', key: 'f-1', updatedAt: 2000, deleted: false, value: font() },
+            { kind: 'font', key: 'f-2', updatedAt: 6000, deleted: true, value: null },
         ]
         for (const item of items) expect(fromChange(stored(item))).toEqual(item)
     })
@@ -134,5 +170,51 @@ describe('records', () => {
             },
         ]
         for (const change of bad) expect(fromChange(change)).toBeNull()
+    })
+
+    it('drops a font that is not valid', () => {
+        const face = font().faces[0]
+        const bad: unknown[] = [
+            font({ name: 5 as unknown as string }),
+            font({ name: ' \x00 ' }),
+            font({ fallback: 'cursive' as SyncFontValue['fallback'] }),
+            font({ faces: [] }),
+            font({ faces: Array.from({ length: 17 }, () => face) }),
+            font({ faces: [{ ...face, hash: 'x' }] }),
+            font({ faces: [{ ...face, format: 'svg' as 'woff' }] }),
+            font({ faces: [{ ...face, weight: '0' }] }),
+            font({ faces: [{ ...face, weight: '900 100' }] }),
+            font({ faces: [{ ...face, weight: '400; color: red' }] }),
+            font({ faces: [{ ...face, style: 'oblique 10deg' as 'italic' }] }),
+            font({ faces: [{ ...face, stretch: '300%' }] }),
+            font({ faces: [{ ...face, size: MAX_FONT_FILE_BYTES + 1 }] }),
+            font({ updatedAt: -1 }),
+        ]
+        for (const value of bad) expect(fromChange(fontChange(value))).toBeNull()
+    })
+
+    it('drops a font with an id that cannot be part of a CSS name', () => {
+        expect(fromChange(fontChange(font(), 'a.b'))).toBeNull()
+        expect(fromChange({ ...fontChange(null, 'a:b'), deleted: true, data: null })).toBeNull()
+        expect(fromChange(fontChange(font(), 'Ab_9-x'))).not.toBeNull()
+    })
+
+    it('cleans the name of a font, which is text for the page', () => {
+        const value = fromChange(fontChange(font({ name: '  Evil\u202e Name\n' })))?.value
+        expect(value).toMatchObject({ name: 'Evil Name' })
+    })
+
+    it('drops the fields of a font that are not in the contract', () => {
+        const value = fromChange(fontChange({ ...font(), id: 'other', extra: 1 }))?.value
+        expect(value).toEqual(font())
+    })
+
+    it('skips a kind that this version does not use', () => {
+        const change = { ...fontChange(font()), kind: 'setting' as const, key: 'fontId' }
+        expect(fromChange(change)).toBeNull()
+    })
+
+    it('has the same font size limit as the server', () => {
+        expect(MAX_FONT_FILE_BYTES).toBe(MAX_FONT_BYTES)
     })
 })

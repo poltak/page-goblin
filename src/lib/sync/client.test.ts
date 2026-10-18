@@ -129,6 +129,63 @@ describe('createSyncClient', () => {
         expect(fetch).not.toHaveBeenCalled()
     })
 
+    it('asks for kinds and reads the kinds of the server', async () => {
+        const fetch = vi.fn((_url: string, _init?: RequestInit) =>
+            jsonReply({
+                account: 'acc',
+                changes: [],
+                cursor: 0,
+                more: false,
+                kinds: ['book', 'font', 'comment'],
+            }),
+        )
+        const client = createSyncClient({ server: SERVER, token: 't', fetch })
+
+        const result = await client.pull({ since: 5, kinds: ['book', 'font'] })
+
+        expect(fetch.mock.calls[0][0]).toBe(
+            `${SERVER}/v1/changes?since=5&limit=100&kinds=book%2Cfont`,
+        )
+        expect(result.kinds).toEqual(['book', 'font'])
+        expect(await client.status()).toEqual({ account: 'acc', kinds: ['book', 'font'] })
+    })
+
+    it('gives no kinds for an old server', async () => {
+        const fetch = vi.fn(() =>
+            jsonReply({ account: 'acc', changes: [], cursor: 0, more: false }),
+        )
+        const client = createSyncClient({ server: SERVER, token: 't', fetch })
+        expect(await client.pull({ since: 0 })).toEqual({
+            account: 'acc',
+            changes: [],
+            cursor: 0,
+            more: false,
+        })
+        expect(await client.status()).toEqual({ account: 'acc' })
+    })
+
+    it('uploads only a font file with a font type, and gives the downloaded bytes', async () => {
+        const fetch = vi.fn((_url: string, _init?: RequestInit) => reply(null, { status: 204 }))
+        const client = createSyncClient({ server: SERVER, token: 't', fetch })
+
+        await client.putBlob({ folder: 'fonts', hash: HASH }, new Blob(['x'], { type: 'text/css' }))
+        expect(fetch).not.toHaveBeenCalled()
+        await client.putBlob(
+            { folder: 'fonts', hash: HASH },
+            new Blob(['x'], { type: 'font/woff2' }),
+        )
+        expect(fetch.mock.calls[0][0]).toBe(`${SERVER}/v1/fonts/${HASH}`)
+        expect(fetch.mock.calls[0][1]?.headers).toMatchObject({ 'Content-Type': 'font/woff2' })
+
+        const download = createSyncClient({
+            server: SERVER,
+            token: 't',
+            fetch: () => reply('font bytes', { headers: { 'Content-Type': 'text/html' } }),
+        })
+        const blob = await download.getBlob({ folder: 'fonts', hash: HASH })
+        expect(await blob?.text()).toBe('font bytes')
+    })
+
     it('uses keepalive only for a small push', async () => {
         const fetch = vi.fn((_url: string, _init?: RequestInit) => jsonReply({ rejected: [] }))
         const client = createSyncClient({ server: SERVER, token: 't', fetch })

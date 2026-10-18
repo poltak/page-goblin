@@ -2,16 +2,41 @@ import { Blob as NodeBlob } from 'node:buffer'
 import { IDBFactory } from 'fake-indexeddb'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createLibraryStorage, type LibraryFileStorage } from './library-storage'
-import { createSyncStore, isNewer, type SyncStore } from './sync-store'
+import { createSyncStore, FIRST_SYNC_KINDS, isNewer, type SyncStore } from './sync-store'
 import type {
     BookmarkRecord,
     BookRecord,
+    FontRecord,
     HighlightRecord,
     OutboxEntry,
     ProgressRecord,
     SyncBookValue,
     SyncItem,
 } from './types'
+
+function makeFont(id: string, hashes: string[], changes: Partial<FontRecord> = {}): FontRecord {
+    return {
+        id,
+        name: `Font ${id}`,
+        fallback: 'serif',
+        faces: hashes.map((hash) => ({
+            hash,
+            format: 'truetype' as const,
+            weight: '400',
+            style: 'normal' as const,
+            stretch: '100%',
+            size: 10,
+        })),
+        addedAt: 500,
+        updatedAt: 600,
+        ...changes,
+    }
+}
+
+function fontItem(font: FontRecord, updatedAt = font.updatedAt): SyncItem {
+    const { id, ...value } = font
+    return { kind: 'font', key: id, updatedAt, deleted: false, value }
+}
 
 function makeBook(id: string, changes: Partial<BookRecord> = {}): BookRecord {
     return {
@@ -467,7 +492,7 @@ describe('createSyncStore', () => {
                 ],
             })
 
-            expect(result).toEqual({ books: [], progress: [], annotations: [] })
+            expect(result).toEqual({ books: [], progress: [], annotations: [], fonts: false })
             expect(await storage.getProgress('a')).toEqual(makeProgress('a', 3000))
         })
 
@@ -522,6 +547,130 @@ describe('createSyncStore', () => {
             expect(await storage.getFile('a')).toBeUndefined()
             expect((await storage.getBook('a'))?.remoteOnly).toBe(true)
             expect(await sync.removeDownload('missing')).toBe(false)
+        })
+    })
+
+    describe('fonts', () => {
+        function putFont(font: FontRecord, ...hashes: string[]): Promise<void> {
+            const files = new Map(hashes.map((hash) => [hash, new Blob([hash])]))
+            return storage.putFont({ record: font, files })
+        }
+
+        function fontFileKeys(): Promise<string[]> {
+            return storage.database.run<string[]>({
+                stores: 'fontFiles',
+                mode: 'readonly',
+                failureMessage: 'Unable to read.',
+                work: (transaction) => {
+                    const request = transaction.objectStore('fontFiles').getAllKeys()
+                    return () => request.result.map(String).sort()
+                },
+            })
+        }
+
+        it('reads a font and its files from the outbox, after the other records', async () => {
+            syncOn = true
+            await putFont(makeFont('f', ['r', 'i']), 'r', 'i')
+            await addBook('a')
+
+            const batch = await sync.readOutbox(10)
+
+            expect(batch.changes.map(({ item }) => item.kind)).toEqual(['book', 'font'])
+            expect(batch.changes[1].item).toEqual(fontItem(makeFont('f', ['r', 'i'])))
+            expect(batch.fontFiles.map((entry) => entry.key).sort()).toEqual(['i', 'r'])
+            expect(batch.stale).toEqual([])
+        })
+
+        it('leaves the font entries for a server that does not keep fonts', async () => {
+            syncOn = true
+            await putFont(makeFont('f', ['r']), 'r')
+
+            const batch = await sync.readOutbox(10, FIRST_SYNC_KINDS)
+
+            expect(batch).toEqual({ changes: [], files: [], fontFiles: [], stale: [] })
+            expect((await readOutbox()).map((entry) => entry.id).sort()).toEqual([
+                'font:f',
+                'fontFile:r',
+            ])
+        })
+
+        it('sends a removed font as a delete and drops the upload of its file', async () => {
+            syncOn = true
+            await putFont(makeFont('f', ['r']), 'r')
+            await storage.deleteFont('f')
+
+            const batch = await sync.readOutbox(10)
+
+            expect(batch.changes.map(({ item }) => item)).toEqual([
+                { kind: 'font', key: 'f', updatedAt: 9000, deleted: true, value: null },
+            ])
+            expect(batch.stale.map((entry) => entry.id)).toEqual(['fontFile:r'])
+        })
+
+        it('writes a font from the server and keeps a newer font of this device', async () => {
+            const result = await sync.applyRemote({ items: [fontItem(makeFont('f', ['r']))] })
+            expect(result.fonts).toBe(true)
+            // The files come later. Until then the family does not show.
+            expect(await storage.listFonts()).toEqual([])
+            expect(await sync.missingFontFiles()).toEqual(['r'])
+
+            await putFont(makeFont('g', ['x'], { updatedAt: 800 }), 'x')
+            const older = await sync.applyRemote({
+                items: [fontItem(makeFont('g', ['y'], { updatedAt: 700 }))],
+            })
+            expect(older.fonts).toBe(false)
+            expect((await storage.listFonts()).map((font) => font.id)).toEqual(['g'])
+        })
+
+        it('removes the files that a font from the server does not use now', async () => {
+            await putFont(makeFont('f', ['r', 'old']), 'r', 'old')
+            await putFont(makeFont('g', ['r']))
+
+            await sync.applyRemote({
+                items: [fontItem(makeFont('f', ['r'], { updatedAt: 700 }))],
+            })
+            expect(await fontFileKeys()).toEqual(['r'])
+
+            await sync.applyRemote({
+                items: [{ kind: 'font', key: 'g', updatedAt: 800, deleted: true, value: null }],
+            })
+            expect(await fontFileKeys()).toEqual(['r'])
+            await sync.applyRemote({
+                items: [{ kind: 'font', key: 'f', updatedAt: 900, deleted: true, value: null }],
+            })
+            expect(await storage.listFonts()).toEqual([])
+            expect(await fontFileKeys()).toEqual([])
+        })
+
+        it('stores a downloaded font file only for a family that uses it', async () => {
+            await sync.applyRemote({ items: [fontItem(makeFont('f', ['r']))] })
+
+            await sync.storeFontFile('r', new Blob(['r']))
+            await sync.storeFontFile('other', new Blob(['other']))
+
+            expect(await fontFileKeys()).toEqual(['r'])
+            expect(await sync.missingFontFiles()).toEqual([])
+            expect(await storage.listFonts()).toEqual([makeFont('f', ['r'])])
+        })
+
+        it('seeds the outbox with the fonts and their files', async () => {
+            await putFont(makeFont('f', ['r']), 'r')
+            await sync.seedOutbox()
+            expect(await readOutbox()).toEqual([
+                { id: 'font:f', kind: 'font', key: 'f', deleted: false, changedAt: 600 },
+                { id: 'fontFile:r', kind: 'fontFile', key: 'r', deleted: false, changedAt: 0 },
+            ])
+        })
+
+        it('removes the fonts that do not have all their files at reset', async () => {
+            await putFont(makeFont('f', ['r']), 'r')
+            await sync.applyRemote({ items: [fontItem(makeFont('g', ['r', 'missing']))] })
+
+            await sync.reset()
+
+            expect(await storage.listFonts()).toEqual([makeFont('f', ['r'])])
+            expect(await fontFileKeys()).toEqual(['r'])
+            expect(await sync.missingFontFiles()).toEqual([])
         })
     })
 
