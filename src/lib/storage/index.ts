@@ -26,9 +26,12 @@ export type {
 export type {
     BookmarkRecord,
     BookRecord,
+    FontFaceRecord,
+    FontRecord,
     HighlightRecord,
     LibraryStorage,
     NewBook,
+    NewFont,
     ProgressRecord,
     SpineStats,
 } from './types'

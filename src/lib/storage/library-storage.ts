@@ -4,6 +4,7 @@ import type {
     BookmarkRecord,
     BookRecord,
     ChangeTracker,
+    FontRecord,
     HighlightRecord,
     LibraryStorage,
     OutboxEntry,
@@ -62,6 +63,25 @@ const LOCAL_FIELDS = new Set<string>(['lastOpenedAt', 'remoteOnly'])
 export function withFile(book: BookRecord): BookRecord {
     const { remoteOnly: _, ...rest } = book
     return rest
+}
+
+/**
+ * Deletes each file of `candidates` that no font family uses. Call it in a transaction on the
+ * `fonts` and `fontFiles` stores, after the requests that change the families.
+ */
+export function removeUnusedFontFiles(
+    transaction: IDBTransaction,
+    candidates: Iterable<string>,
+): void {
+    const families = transaction.objectStore('fonts').getAll()
+    families.onsuccess = () => {
+        const used = new Set<string>()
+        for (const family of families.result as FontRecord[]) {
+            for (const face of family.faces) used.add(face.hash)
+        }
+        const files = transaction.objectStore('fontFiles')
+        for (const hash of candidates) if (!used.has(hash)) files.delete(hash)
+    }
 }
 
 function compareBookmarks(a: BookmarkRecord, b: BookmarkRecord): number {
@@ -398,6 +418,71 @@ export function createLibraryStorage(options: LibraryStorageOptions = {}): Libra
                 failureMessage: 'Unable to delete the highlight.',
                 request: (store) => store.delete(id),
                 change: () => outboxEntry('highlight', id, { deleted: true, changedAt: now() }),
+            }),
+
+        listFonts: () =>
+            database.run<FontRecord[]>({
+                stores: ['fonts', 'fontFiles'],
+                mode: 'readonly',
+                failureMessage: 'Unable to read the fonts.',
+                work: (transaction) => {
+                    const families = transaction.objectStore('fonts').getAll()
+                    const files = transaction.objectStore('fontFiles').getAllKeys()
+                    return () => {
+                        // The sync can bring a family before its files.
+                        const present = new Set(files.result.map(String))
+                        return (families.result as FontRecord[]).filter((family) =>
+                            family.faces.every((face) => present.has(face.hash)),
+                        )
+                    }
+                },
+            }),
+
+        getFontFile: (hash) =>
+            read<Blob | undefined>({
+                store: 'fontFiles',
+                failureMessage: 'Unable to read the font file.',
+                request: (store) => store.get(hash),
+            }),
+
+        putFont: ({ record, files }) =>
+            database.run({
+                stores: ['fonts', 'fontFiles'],
+                mode: 'readwrite',
+                failureMessage: 'Unable to save the font.',
+                work: (transaction) => {
+                    const fileStore = transaction.objectStore('fontFiles')
+                    const keys = fileStore.getAllKeys()
+                    keys.onsuccess = () => {
+                        const stored = new Set(keys.result.map(String))
+                        if (
+                            !record.faces.every(({ hash }) => files.has(hash) || stored.has(hash))
+                        ) {
+                            transaction.abort()
+                            return
+                        }
+                        transaction.objectStore('fonts').put(record)
+                        for (const { hash } of record.faces) {
+                            const file = files.get(hash)
+                            // The same hash is the same file, so a stored file stays as it is.
+                            if (file && !stored.has(hash)) fileStore.put(file, hash)
+                        }
+                        removeUnusedFontFiles(transaction, stored)
+                    }
+                },
+            }),
+
+        deleteFont: (id) =>
+            database.run({
+                stores: ['fonts', 'fontFiles'],
+                mode: 'readwrite',
+                failureMessage: 'Unable to remove the font.',
+                work: (transaction) => {
+                    transaction.objectStore('fonts').delete(id)
+                    const keys = transaction.objectStore('fontFiles').getAllKeys()
+                    keys.onsuccess = () =>
+                        removeUnusedFontFiles(transaction, keys.result.map(String))
+                },
             }),
 
         close: () => database.close(),

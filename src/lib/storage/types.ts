@@ -10,8 +10,11 @@
  * - `highlights` key `id`, index `bookId`.
  * - `outbox`     key `id`. The changes that the sync did not send yet. See `OutboxEntry`.
  * - `syncState`  out-of-line keys. The state of the sync, for example its cursor.
+ * - `fonts`      key `id`. One record for each font family that the user added.
+ * - `fontFiles`  key = SHA-256 of the file. The font files as Blobs. Families share a file.
  */
 
+import type { FontFallback, FontFormat, FontStyle } from '$lib/fonts/sfnt'
 import type { HighlightColor, Locator } from '$lib/types'
 
 export interface SpineStats {
@@ -99,6 +102,41 @@ export interface NewBook {
     record: BookRecord
     file: Blob
     cover: Blob | null
+}
+
+/** One file of a font family, for example the bold italic. */
+export interface FontFaceRecord {
+    /** SHA-256 of the file as lower-case hex. The key of the file in `fontFiles`. */
+    hash: string
+    format: FontFormat
+    /** A CSS `font-weight` value: '400', or '100 900' for a variable font. */
+    weight: string
+    style: FontStyle
+    /** A CSS `font-stretch` value: '100%', or '75% 100%' for a variable font. */
+    stretch: string
+    /** File size in bytes. */
+    size: number
+}
+
+/** A font family that the user added. */
+export interface FontRecord {
+    /** `crypto.randomUUID()`. The same on all devices. */
+    id: string
+    /** The name in the font menu. It comes from the font file, and the user can change it. */
+    name: string
+    /** The generic family that shows the characters that the font does not have. */
+    fallback: FontFallback
+    faces: FontFaceRecord[]
+    /** Epoch milliseconds. */
+    addedAt: number
+    /** Epoch milliseconds of the last change. */
+    updatedAt: number
+}
+
+export interface NewFont {
+    record: FontRecord
+    /** The files of the faces by hash. A file that the storage has already can be left out. */
+    files: ReadonlyMap<string, Blob>
 }
 
 /** A kind of record that the sync copies between devices. */
@@ -204,6 +242,18 @@ export interface LibraryStorage {
     listHighlights(bookId: string): Promise<HighlightRecord[]>
     putHighlight(highlight: HighlightRecord): Promise<void>
     deleteHighlight(id: string): Promise<void>
+
+    /** The font families that have all their files on this device. */
+    listFonts(): Promise<FontRecord[]>
+    getFontFile(hash: string): Promise<Blob | undefined>
+    /**
+     * Writes a font family and the new files of its faces in one transaction, and removes the
+     * files that no family uses after the write. Rejects and writes nothing when a face has no
+     * file in `files` and none in storage.
+     */
+    putFont(font: NewFont): Promise<void>
+    /** Removes the family, and the files that no other family uses. */
+    deleteFont(id: string): Promise<void>
 
     /** Close the connection. The next call opens it again. */
     close(): void

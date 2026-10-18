@@ -6,6 +6,8 @@ import { trackFactory, type TrackedFactory } from './testing/tracked-factory'
 import type {
     BookmarkRecord,
     BookRecord,
+    FontFaceRecord,
+    FontRecord,
     HighlightRecord,
     OutboxEntry,
     ProgressRecord,
@@ -79,6 +81,34 @@ function makeHighlight(id: string, changes: Partial<HighlightRecord> = {}): High
         updatedAt: 4000,
         ...changes,
     }
+}
+
+function makeFace(hash: string, changes: Partial<FontFaceRecord> = {}): FontFaceRecord {
+    return {
+        hash,
+        format: 'truetype',
+        weight: '400',
+        style: 'normal',
+        stretch: '100%',
+        size: 10,
+        ...changes,
+    }
+}
+
+function makeFont(id: string, hashes: string[], changes: Partial<FontRecord> = {}): FontRecord {
+    return {
+        id,
+        name: `Font ${id}`,
+        fallback: 'serif',
+        faces: hashes.map((hash) => makeFace(hash)),
+        addedAt: 5000,
+        updatedAt: 5000,
+        ...changes,
+    }
+}
+
+function fontFiles(...hashes: string[]): Map<string, Blob> {
+    return new Map(hashes.map((hash) => [hash, new Blob([`font ${hash}`], { type: 'font/ttf' })]))
 }
 
 function hasBlob(value: unknown): boolean {
@@ -450,6 +480,98 @@ describe('createLibraryStorage', () => {
             await storage.deleteHighlight('missing')
 
             expect((await storage.listHighlights('a')).map((light) => light.id)).toEqual(['two'])
+        })
+    })
+
+    describe('fonts', () => {
+        function storedFontFiles(): Promise<string[]> {
+            return storage.database.run<string[]>({
+                stores: 'fontFiles',
+                mode: 'readonly',
+                failureMessage: 'Unable to read.',
+                work: (transaction) => {
+                    const request = transaction.objectStore('fontFiles').getAllKeys()
+                    return () => request.result.map(String).sort()
+                },
+            })
+        }
+
+        it('has no fonts at the start', async () => {
+            expect(await storage.listFonts()).toEqual([])
+            expect(await storage.getFontFile('x')).toBeUndefined()
+        })
+
+        it('writes a family and its files in one transaction', async () => {
+            await storage.putFont({ record: makeFont('f', ['r', 'b']), files: fontFiles('r', 'b') })
+
+            expect(tracked.transactions).toEqual([
+                { stores: ['fonts', 'fontFiles'], mode: 'readwrite' },
+            ])
+            expect(await storage.listFonts()).toEqual([makeFont('f', ['r', 'b'])])
+            const file = await storage.getFontFile('b')
+            expect(file?.type).toBe('font/ttf')
+            expect(await file?.text()).toBe('font b')
+        })
+
+        it('changes a family with the files that it has already', async () => {
+            await storage.putFont({ record: makeFont('f', ['r']), files: fontFiles('r') })
+            const renamed = makeFont('f', ['r'], { name: 'New name', updatedAt: 6000 })
+            await storage.putFont({ record: renamed, files: new Map() })
+
+            expect(await storage.listFonts()).toEqual([renamed])
+            expect(await storedFontFiles()).toEqual(['r'])
+        })
+
+        it('refuses a face with no file and writes nothing', async () => {
+            await storage.putFont({ record: makeFont('f', ['r']), files: fontFiles('r') })
+            const added = makeFont('f', ['r', 'b'])
+
+            await expect(storage.putFont({ record: added, files: new Map() })).rejects.toThrow(
+                'Unable to save the font.',
+            )
+            expect(await storage.listFonts()).toEqual([makeFont('f', ['r'])])
+        })
+
+        it('removes a replaced file that no other family uses', async () => {
+            await storage.putFont({
+                record: makeFont('f', ['r', 'shared']),
+                files: fontFiles('r', 'shared'),
+            })
+            await storage.putFont({ record: makeFont('g', ['shared']), files: new Map() })
+
+            await storage.putFont({ record: makeFont('f', ['r2']), files: fontFiles('r2') })
+
+            expect(await storedFontFiles()).toEqual(['r2', 'shared'])
+        })
+
+        it('removes a family and the files that only it uses', async () => {
+            await storage.putFont({
+                record: makeFont('f', ['r', 'shared']),
+                files: fontFiles('r', 'shared'),
+            })
+            await storage.putFont({ record: makeFont('g', ['shared']), files: new Map() })
+
+            await storage.deleteFont('f')
+
+            expect(await storage.listFonts()).toEqual([makeFont('g', ['shared'])])
+            expect(await storedFontFiles()).toEqual(['shared'])
+            await storage.deleteFont('g')
+            expect(await storedFontFiles()).toEqual([])
+        })
+
+        it('lists only the families that have all their files', async () => {
+            await storage.putFont({ record: makeFont('f', ['r']), files: fontFiles('r') })
+            // The sync writes a family before its files.
+            await storage.database.run({
+                stores: 'fonts',
+                mode: 'readwrite',
+                failureMessage: 'Unable to write.',
+                work: (transaction) => {
+                    transaction.objectStore('fonts').put(makeFont('g', ['r', 'missing']))
+                },
+            })
+
+            expect(await storage.listFonts()).toEqual([makeFont('f', ['r'])])
         })
     })
 

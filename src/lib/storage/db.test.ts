@@ -51,6 +51,8 @@ describe('createDatabase', () => {
             'books',
             'covers',
             'files',
+            'fontFiles',
+            'fonts',
             'highlights',
             'outbox',
             'progress',
@@ -74,6 +76,8 @@ describe('createDatabase', () => {
         expect([...store('highlights').indexNames]).toEqual(['bookId'])
         expect(store('outbox').keyPath).toBe('id')
         expect(store('syncState').keyPath).toBeNull()
+        expect(store('fonts').keyPath).toBe('id')
+        expect(store('fontFiles').keyPath).toBeNull()
         raw.close()
     })
 
@@ -108,6 +112,42 @@ describe('createDatabase', () => {
         expect(raw.version).toBe(DATABASE_VERSION)
         expect(raw.objectStoreNames.contains('outbox')).toBe(true)
         expect(raw.objectStoreNames.contains('syncState')).toBe(true)
+        expect(raw.objectStoreNames.contains('fonts')).toBe(true)
+        raw.close()
+    })
+
+    it('adds the font stores to a version 2 database and keeps its records', async () => {
+        const factory = new IDBFactory()
+        const old = await new Promise<IDBDatabase>((resolve, reject) => {
+            const request = factory.open(DATABASE_NAME, 2)
+            request.onupgradeneeded = () => {
+                const db = request.result
+                for (const name of ['books', 'bookmarks', 'highlights', 'outbox']) {
+                    db.createObjectStore(name, { keyPath: 'id' })
+                }
+                db.createObjectStore('files')
+                db.createObjectStore('covers')
+                db.createObjectStore('syncState')
+                db.createObjectStore('progress', { keyPath: 'bookId' })
+            }
+            request.onsuccess = () => resolve(request.result)
+            request.onerror = () => reject(request.error)
+        })
+        await new Promise<void>((resolve) => {
+            const transaction = old.transaction('progress', 'readwrite')
+            transaction.objectStore('progress').put({ bookId: 'a' })
+            transaction.oncomplete = () => resolve()
+        })
+        old.close()
+
+        const database = createDatabase({ indexedDB: factory })
+        expect(await countProgress(database)).toBe(1)
+        database.close()
+
+        const raw = await openRaw(factory)
+        expect(raw.version).toBe(DATABASE_VERSION)
+        expect(raw.objectStoreNames.contains('fonts')).toBe(true)
+        expect(raw.objectStoreNames.contains('fontFiles')).toBe(true)
         raw.close()
     })
 
