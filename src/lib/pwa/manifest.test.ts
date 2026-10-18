@@ -23,7 +23,9 @@ describe('web app manifest', () => {
             // Android hides its status bar and its navigation bar for this mode. A page
             // cannot hide them. iOS and the desktop browsers show the app as a standalone app.
             display: 'fullscreen',
-            background_color: '#fbfaf8',
+            // Chrome on Android fills the start screen and the window with this colour until the
+            // page draws. It has no dark variant. Black stops a white flash in the dark themes.
+            background_color: '#000000',
             // Chrome on Android paints the navigation bar with this colour when the installed
             // app starts. The theme-color tag of the page changes only the status bar, so the
             // bar cannot follow the theme. Black looks right below the dark themes and uses
