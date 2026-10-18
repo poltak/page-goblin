@@ -466,8 +466,8 @@ export function createReaderScreen(options: ReaderScreenOptions): ReaderScreen {
     }
 
     /**
-     * The running head and foot keep their height when their text is hidden, so the page text
-     * does not move.
+     * A running line with hidden text shrinks to its safe area (in `screen.css`), so the page
+     * text fills the screen.
      */
     function renderRunningLines(): void {
         const { runningHead, runningFoot } = settings.get()

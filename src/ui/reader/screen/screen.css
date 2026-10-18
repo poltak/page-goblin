@@ -78,6 +78,18 @@
     text-overflow: ellipsis;
 }
 
+/*
+ * A line with hidden text keeps only its safe area, so the page text goes to the edge of the
+ * screen. The text moves one time when the setting changes.
+ */
+.reader-head:has(> .reader-head-text[hidden]) {
+    height: var(--safe-top);
+}
+
+.reader-foot:has(> .reader-foot-page[hidden]) {
+    height: var(--safe-bottom);
+}
+
 .reader-foot {
     grid-row: 4;
     justify-content: space-between;
@@ -97,15 +109,16 @@
 }
 
 /*
- * The button that shows and hides the text of the running foot. It is in the grid cell of the
- * foot and covers its right half. The foot keeps its height when its text is hidden, so the
- * page text does not move and the button stays in its place.
+ * The button that shows and hides the text of the running foot. It covers the right half of the
+ * foot. It stays in its place when the foot text is hidden, and then it lies over the page text.
  */
 .reader-foot-toggle {
-    grid-row: 4;
-    grid-column: 1;
-    justify-self: end;
-    width: 50%;
+    position: absolute;
+    right: var(--safe-right);
+    bottom: 0;
+    z-index: var(--z-raised);
+    width: calc((100% - var(--safe-left) - var(--safe-right)) / 2);
+    height: calc(var(--space-7) + var(--safe-bottom));
     padding: 0;
     border: 0;
     border-radius: 0;
