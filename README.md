@@ -12,14 +12,14 @@ The app is plain HTML, CSS and TypeScript. It has no UI library and no runtime n
 - **Paged view.** Swipe, tap, use the keys or the wheel to turn the page. The page follows the finger. Wide screens show two columns.
 - **Scroll view.** One continuous column through the whole book.
 - **Themes.** Light, sepia, dark, and black for OLED screens. "Auto" follows the system.
-- **Fonts.** 14 bundled open-licence families, system fonts, and the fonts that the book embeds. You can set the size, line height, margins, alignment and hyphenation.
+- **Fonts.** 14 bundled open-licence families, system fonts, the fonts that the book embeds, and your own fonts (TTF, OTF, WOFF or WOFF2 files). You can set the size, line height, margins, alignment and hyphenation.
 - **Bookmarks and highlights.** Five highlight colours, with notes.
 - **Search.** Search the whole book and see each match in its context.
 - **Note popovers.** A tap on a footnote number shows the note on the same page.
 - **Speed reader.** One word at a time with a pivot letter, punctuation pauses, hold to pause, hold to rewind, and sentence steps.
 - **Listen.** The browser reads the book aloud. A marker follows the voice and the pages turn by themselves.
 - **Export.** Highlights as Markdown or in the Kindle "My Clippings.txt" format. A backup file holds the positions, bookmarks and highlights of all books.
-- **Sync.** Optional. Books, reading positions, bookmarks and highlights go to your other devices through your own sync server. With sync off, nothing leaves the device.
+- **Sync.** Optional. Books, reading positions, bookmarks, highlights, your fonts and your font choice go to your other devices through your own sync server. With sync off, nothing leaves the device.
 - **Offline.** After the first visit the app starts with no network.
 - **Full screen.** The installed app on Android shows no status bar and no navigation bar.
 
@@ -47,8 +47,9 @@ Sync is off until you turn it on. Then the app copies these items between your d
 - the books (the EPUB files, the covers and the details)
 - the reading position of each book
 - the bookmarks and the highlights, with their notes
+- the fonts that you added, and the font that you chose
 
-The settings stay on each device, because a phone and a laptop need different font sizes.
+The other settings stay on each device, because a phone and a laptop need different font sizes.
 
 Sync uses a server that you run in your own Cloudflare account: one Worker, one D1 database and one R2 bucket. The free plan of Cloudflare is sufficient for one reader. It has 10 GB in R2 (about 2,000 books of 5 MB) and 100,000 requests each day. One server holds the data of one person.
 
@@ -74,6 +75,10 @@ pnpm exec wrangler secret put SETUP_CODE
 ```
 
 The first deploy makes the D1 database and the R2 bucket. The Worker makes its tables at the first request.
+
+### Update your sync server
+
+A sync server from before version 0.2.0 does not keep fonts. The app then syncs your other data, and the Sync dialog tells you to update the server. To update, copy the new `sync-server/` files into your repository and deploy again. Your data stays on the server.
 
 ### Connect your devices
 
@@ -123,7 +128,7 @@ The build has a relative base path. The same build works at `user.github.io/any-
 | `src/lib/rsvp`        | The speed reader engine.                                                                                                                                                 |
 | `src/lib/speech`      | The read-aloud controller for the browser speech API.                                                                                                                    |
 | `src/lib/settings`    | Settings with validation and persistence, and the themes.                                                                                                                |
-| `src/lib/fonts`       | The font catalogue. Each bundled family loads when you select it.                                                                                                        |
+| `src/lib/fonts`       | The font catalogue. Each bundled family loads when you select it. Your own fonts: the reader of font files, the import, and the registry that adds them to the page.     |
 | `src/lib/annotations` | Highlight export and the backup file.                                                                                                                                    |
 | `src/lib/pwa`         | Service worker registration, the install prompt, the file handler, the wake lock.                                                                                        |
 | `src/ui`              | The library screen, the reader screen and its parts. `src/ui/sync` has the sync dialog and the timing of the sync.                                                       |
@@ -162,5 +167,7 @@ The dev server has two extra pages. `/kit.html` shows each component of the desi
 - Fixed-layout books, audio, video and scripts in books are not supported.
 - Read-aloud uses the voices that the browser and the device have.
 - Without sync, reading data is on one device. To move it, export a backup file and import it on the other device.
+- The backup file does not have your fonts. Add them again on the other device, or use sync.
+- A font collection (`.ttc`) does not work. Use the `.ttf` or `.otf` files of the font.
 - Sync uses "last write wins" with the clocks of the devices. When two devices change the same highlight before a sync, the later change wins.
 - A sync server holds the data of one person.

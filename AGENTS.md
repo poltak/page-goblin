@@ -36,6 +36,8 @@ Quickstart for coding sessions in `page-goblin`.
 - The sync is `src/lib/sync` (engine, client, code), `src/lib/storage/sync-store.ts` (its transactions) and `src/ui/sync` (host, controller, dialog). Only `src/ui/sync/host.ts` and `src/lib/sync/config.ts` are in the first chunk.
 - `sync-server` is the Worker. It imports nothing from the app, because the Deploy to Cloudflare button deploys the directory alone. Its tests run from the root with `pnpm test:single`.
 - The reader screen is `src/ui/reader`. `session/` is the model of one open book. `screen/` is the layout, bars and keyboard. `panels/`, `tools/`, `speed/` and `listen/` are parts that the screen loads at their first use.
+- The fonts that the user adds are in `src/lib/fonts`: `sfnt.ts` reads a font file, `import.ts` makes font families from files, and `user-fonts.ts` is the registry of the page that adds their faces to `document.fonts`. The session gives the registry to the parts as `session.fonts`. The sheet `src/ui/reader/panels/fonts.ts` loads from the reading settings panel at its first use.
+- A font id `user:ID` names a family that the user added. CSS gets the family name `pg-font-ID`, never the name from the font file.
 
 ## How UI code is written
 
@@ -50,9 +52,11 @@ Quickstart for coding sessions in `page-goblin`.
 
 ## Sync
 
-- Write books, progress, bookmarks and highlights only through `LibraryStorage`. While sync is on, each of its writes puts an outbox entry in the same transaction. A write in a different place does not sync.
+- Write books, progress, bookmarks, highlights, fonts and the synced settings only through `LibraryStorage`. While sync is on, each of its writes puts an outbox entry in the same transaction. A write in a different place does not sync.
+- Only the font choice (`fontId`) of the settings syncs. The settings are in localStorage, so `putSyncedSetting` keeps a copy in IndexedDB. A value that equals the copy writes nothing, so a value from the server does not go back.
 - The sync key of a book, its progress and its file is the file hash. The local book id is different on each device.
 - People run their own copy of `sync-server`. A change of `sync-server/src/protocol.ts` must keep old servers and old apps working.
+- A server gives its list of kinds, and the app sends only those kinds, because a server refuses a whole push with a kind that it does not keep. A pull with no `kinds` parameter gets only `FIRST_KINDS`, because an old app refuses a whole pull with a kind that it does not know. When the server keeps a new kind, the app pulls that kind from cursor 0 one time.
 - Server data is not trusted. `src/lib/sync/records.ts` checks each record before it goes into storage.
 - A new record format (for example encryption) needs a new `DATA_FORMAT` and one full pull from cursor 0, because older versions moved their cursor past records that they could not read.
 - `lastOpenedAt` does not sync. An open on one device must not win over a delete on a different device.
