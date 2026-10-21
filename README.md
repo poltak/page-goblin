@@ -21,7 +21,6 @@ The app is plain HTML, CSS and TypeScript. It has no UI library and no runtime n
 - **Export.** Highlights as Markdown or in the Kindle "My Clippings.txt" format. A backup file holds the positions, bookmarks and highlights of all books.
 - **Sync.** Optional. Books, reading positions, bookmarks, highlights, your fonts and your font choice go to your other devices through your own sync server. With sync off, nothing leaves the device.
 - **Offline.** After the first visit the app starts with no network.
-- **Full screen.** The installed app on Android shows no status bar and no navigation bar.
 
 ## Run it
 

@@ -1521,24 +1521,11 @@ describe('full screen', () => {
 
     afterEach(() => {
         for (const [target, name] of added.splice(0)) Reflect.deleteProperty(target, name)
-        vi.unstubAllGlobals()
     })
 
     it('has no menu item in a browser with no full screen for elements', () => {
         const { frame } = setup()
         expect(frame.fullscreenItem.hidden).toBe(true)
-    })
-
-    it('has no menu item and no key in the installed app that fills the screen', () => {
-        const { request } = installFullscreen()
-        vi.stubGlobal(
-            'matchMedia',
-            vi.fn((query: string) => ({ matches: query === '(display-mode: fullscreen)' })),
-        )
-        const { frame } = setup()
-        expect(frame.fullscreenItem.hidden).toBe(true)
-        expect(press('f').defaultPrevented).toBe(false)
-        expect(request).not.toHaveBeenCalled()
     })
 
     it('enters full screen from the More menu', async () => {

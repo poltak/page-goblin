@@ -16,13 +16,14 @@ describe('web app manifest', () => {
     // A project site on GitHub Pages is below a repository path.
     const manifestUrl = 'https://example.github.io/page-goblin/manifest.webmanifest'
 
-    it('names an app that fills the screen', () => {
+    it('names a standalone app', () => {
         expect(manifest).toMatchObject({
             name: 'Page Goblin',
             short_name: 'Page Goblin',
-            // Android hides its status bar and its navigation bar for this mode. A page
-            // cannot hide them. iOS and the desktop browsers show the app as a standalone app.
-            display: 'fullscreen',
+            // The fullscreen mode hides the Android system bars for all of the app, and the
+            // page cannot show them again. The Full screen item of the reader hides them only
+            // while the user wants.
+            display: 'standalone',
             // Chrome on Android fills the start screen and the window with this colour until the
             // page draws. It has no dark variant. Black stops a white flash in the dark themes.
             background_color: '#000000',

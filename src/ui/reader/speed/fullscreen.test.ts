@@ -32,7 +32,6 @@ function stubStandard() {
 
 afterEach(() => {
     for (const [target, name] of added.splice(0)) delete (target as Stub)[name]
-    vi.unstubAllGlobals()
 })
 
 describe('createFullscreen', () => {
@@ -50,27 +49,6 @@ describe('createFullscreen', () => {
         stubStandard()
         define(document, { fullscreenEnabled: false })
         expect(createFullscreen({ onChange: vi.fn() }).supported).toBe(false)
-    })
-
-    it('is not supported in the installed app that fills the screen already', () => {
-        stubStandard()
-        vi.stubGlobal(
-            'matchMedia',
-            vi.fn((query: string) => ({ matches: query === '(display-mode: fullscreen)' })),
-        )
-        expect(createFullscreen({ onChange: vi.fn() }).supported).toBe(false)
-    })
-
-    it('stays supported when full screen of the page gives the display mode', () => {
-        stubStandard()
-        define(document, { fullscreenElement: root })
-        vi.stubGlobal(
-            'matchMedia',
-            vi.fn((query: string) => ({ matches: query === '(display-mode: fullscreen)' })),
-        )
-        const control = createFullscreen({ onChange: vi.fn() })
-        expect(control.supported).toBe(true)
-        expect(control.active).toBe(true)
     })
 
     it('enters and leaves full screen for the root element', () => {

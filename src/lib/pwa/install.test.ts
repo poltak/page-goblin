@@ -132,28 +132,6 @@ describe('install prompt', () => {
         })
     })
 
-    describe('fillsScreen', () => {
-        it('is false in a browser tab and in a standalone app', () => {
-            expect(install.fillsScreen()).toBe(false)
-
-            vi.stubGlobal(
-                'matchMedia',
-                vi.fn((query: string) => ({ matches: query === '(display-mode: standalone)' })),
-            )
-            expect(install.fillsScreen()).toBe(false)
-        })
-
-        it('is true when the display mode is fullscreen', () => {
-            vi.stubGlobal(
-                'matchMedia',
-                vi.fn((query: string) => ({ matches: query === '(display-mode: fullscreen)' })),
-            )
-
-            expect(install.fillsScreen()).toBe(true)
-            expect(install.isStandalone()).toBe(false)
-        })
-    })
-
     describe('isIos', () => {
         it('is true on an iPhone', () => {
             setNavigator({

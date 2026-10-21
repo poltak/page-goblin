@@ -4,7 +4,7 @@
     "description": "A local-first EPUB reader and speed reader. Your books stay on your device.",
     "start_url": "./",
     "scope": "./",
-    "display": "fullscreen",
+    "display": "standalone",
     "background_color": "#000000",
     "theme_color": "#000000",
     "lang": "en",
