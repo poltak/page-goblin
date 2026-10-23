@@ -44,15 +44,18 @@ describe('design system CSS', () => {
     it('uses only custom properties that have a definition', () => {
         const fromTokens = names(tokens, /(--[\w-]+)\s*:/g)
         // The page sets these on an element. Each use has a fallback value.
-        const inputs = ['--value', '--level', '--toast-offset']
-        for (const css of [base, components]) {
-            const known = new Set([...fromTokens, ...names(css, /(--[\w-]+)\s*:/g), ...inputs])
+        const inputs = new Map([
+            [base, ['--black-brightness']],
+            [components, ['--value', '--level', '--toast-offset']],
+        ])
+        for (const [css, own] of inputs) {
+            const known = new Set([...fromTokens, ...names(css, /(--[\w-]+)\s*:/g), ...own])
             const unknown = [...names(css, /var\(\s*(--[\w-]+)/g)].filter((n) => !known.has(n))
             expect(unknown).toEqual([])
-        }
-        for (const input of inputs) {
-            expect(components).toMatch(new RegExp(`var\\(${input}, [^)]+\\)`))
-            expect(components).not.toMatch(new RegExp(`var\\(${input}\\)`))
+            for (const input of own) {
+                expect(css).toMatch(new RegExp(`var\\(${input}, [^)]+\\)`))
+                expect(css).not.toMatch(new RegExp(`var\\(${input}\\)`))
+            }
         }
     })
 

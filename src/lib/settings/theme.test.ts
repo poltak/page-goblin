@@ -78,7 +78,7 @@ describe('applyTheme', () => {
         'sets data-theme and the theme colour for %s',
         (theme) => {
             document.head.innerHTML = '<meta name="theme-color" content="#123456" />'
-            applyTheme(theme)
+            applyTheme({ theme, blackBrightness: 100, blackTint: 'neutral' })
             expect(document.documentElement.getAttribute('data-theme')).toBe(theme)
             expect(
                 document.querySelector('meta[name="theme-color"]')?.getAttribute('content'),
@@ -87,17 +87,57 @@ describe('applyTheme', () => {
     )
 
     it('sets data-theme when the page has no theme-color tag', () => {
-        expect(() => applyTheme('dark')).not.toThrow()
+        expect(() =>
+            applyTheme({ theme: 'dark', blackBrightness: 100, blackTint: 'neutral' }),
+        ).not.toThrow()
         expect(document.documentElement.dataset.theme).toBe('dark')
     })
 
     it('does not change other meta tags', () => {
         document.head.innerHTML =
             '<meta name="color-scheme" content="light dark" /><meta name="theme-color" content="" />'
-        applyTheme('sepia')
+        applyTheme({ theme: 'sepia', blackBrightness: 100, blackTint: 'neutral' })
         expect(document.querySelector('meta[name="color-scheme"]')?.getAttribute('content')).toBe(
             'light dark',
         )
+    })
+
+    describe('black brightness and tint', () => {
+        const root = document.documentElement
+        const state = () => ({
+            dim: root.hasAttribute('data-black-dim'),
+            brightness: root.style.getPropertyValue('--black-brightness'),
+            tint: root.dataset.blackTint,
+        })
+
+        afterEach(() => {
+            for (const name of ['data-theme', 'data-black-dim', 'data-black-tint', 'style']) {
+                root.removeAttribute(name)
+            }
+        })
+
+        it('dims and tints the black theme', () => {
+            applyTheme({ theme: 'black', blackBrightness: 40, blackTint: 'amber' })
+            expect(state()).toEqual({ dim: true, brightness: '0.4', tint: 'amber' })
+        })
+
+        it('does not dim at 100 and does not tint with neutral', () => {
+            applyTheme({ theme: 'black', blackBrightness: 100, blackTint: 'neutral' })
+            expect(state()).toEqual({ dim: false, brightness: '', tint: undefined })
+        })
+
+        it.each(['light', 'sepia', 'dark'] as const)('removes both in the %s theme', (theme) => {
+            applyTheme({ theme: 'black', blackBrightness: 30, blackTint: 'red' })
+            applyTheme({ theme, blackBrightness: 30, blackTint: 'red' })
+            expect(state()).toEqual({ dim: false, brightness: '', tint: undefined })
+        })
+
+        it('keeps other inline styles of the root element', () => {
+            root.style.setProperty('--other', '1')
+            applyTheme({ theme: 'black', blackBrightness: 30, blackTint: 'red' })
+            applyTheme({ theme: 'black', blackBrightness: 100, blackTint: 'red' })
+            expect(root.style.getPropertyValue('--other')).toBe('1')
+        })
     })
 })
 

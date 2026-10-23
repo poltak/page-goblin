@@ -4,6 +4,10 @@ import { createFakeUserFonts } from '$lib/fonts/testing/fake-user-fonts'
 import type { FakeUserFonts } from '$lib/fonts/testing/fake-user-fonts'
 import {
     settings as appSettings,
+    BLACK_BRIGHTNESS_MAX,
+    BLACK_BRIGHTNESS_MIN,
+    BLACK_BRIGHTNESS_STEP,
+    BLACK_TINTS,
     COLUMN_CHOICES,
     createSettingsStore,
     DARK_THEMES,
@@ -165,6 +169,7 @@ describe('the reading settings panel', () => {
         const lists: Record<string, readonly unknown[]> = {
             theme: THEME_CHOICES,
             darkTheme: DARK_THEMES,
+            blackTint: BLACK_TINTS,
             margin: MARGIN_SIZES,
             textAlign: TEXT_ALIGN_CHOICES,
             layout: LAYOUT_MODES,
@@ -255,6 +260,54 @@ describe('theme', () => {
         expect(store.get().darkTheme).toBe('black')
         expect(store.get().theme).toBe('auto')
         expect(darkHalf().dataset.theme).toBe('black')
+    })
+})
+
+describe('black theme', () => {
+    const brightnessSlider = () => q<HTMLInputElement>('[data-slider="blackBrightness"]')
+    const brightnessOutput = () => q('[data-output="blackBrightness"]')
+
+    it('shows the brightness and the text colour only when the page is black', () => {
+        vi.stubGlobal('matchMedia', () => ({ matches: true }))
+        mount({ saved: { theme: 'black' } })
+        expect(rowOf('black').hidden).toBe(false)
+
+        radio('theme', 'dark').click()
+        expect(rowOf('black').hidden).toBe(true)
+
+        radio('theme', 'auto').click()
+        radio('darkTheme', 'black').click()
+        expect(rowOf('black').hidden).toBe(false)
+
+        vi.stubGlobal('matchMedia', () => ({ matches: false }))
+        radio('theme', 'light').click()
+        radio('theme', 'auto').click()
+        expect(rowOf('black').hidden).toBe(true)
+    })
+
+    it('has a brightness slider over the full range, and writes it', () => {
+        mount({ saved: { theme: 'black', blackBrightness: 60 } })
+        const slider = brightnessSlider()
+        expect([slider.min, slider.max, slider.step]).toEqual(
+            [BLACK_BRIGHTNESS_MIN, BLACK_BRIGHTNESS_MAX, BLACK_BRIGHTNESS_STEP].map(String),
+        )
+        expect(slider.value).toBe('60')
+        expect(brightnessOutput().textContent).toBe('60%')
+
+        slide(slider, 35)
+        expect(brightnessOutput().textContent).toBe('35%')
+        release(slider)
+        expect(store.get().blackBrightness).toBe(35)
+    })
+
+    it('writes the text colour', () => {
+        mount({ saved: { theme: 'black' } })
+        expect(radios('blackTint').map(labelOf)).toEqual(['Grey', 'Amber', 'Red'])
+        expect(checkedValue('blackTint')).toBe('neutral')
+
+        radio('blackTint', 'amber').click()
+        expect(store.get().blackTint).toBe('amber')
+        expect(checkedValue('blackTint')).toBe('amber')
     })
 })
 
@@ -701,6 +754,8 @@ describe('reset', () => {
     const changed: Partial<Settings> = {
         theme: 'black',
         darkTheme: 'black',
+        blackBrightness: 30,
+        blackTint: 'red',
         layout: 'scroll',
         fontId: 'lora',
         fontSize: 30,

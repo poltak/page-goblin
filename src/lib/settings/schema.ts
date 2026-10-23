@@ -6,6 +6,9 @@ export type ThemeChoice = 'auto' | ReadingTheme
 
 export type DarkTheme = 'dark' | 'black'
 
+/** The colour of the text in the black theme. */
+export type BlackTint = 'neutral' | 'amber' | 'red'
+
 export type LibrarySort = 'recent' | 'added' | 'title' | 'author'
 
 export interface RsvpSettings {
@@ -38,6 +41,12 @@ export interface SpeechSettings {
 export interface Settings {
     theme: ThemeChoice
     darkTheme: DarkTheme
+    /**
+     * The brightness of all of the screen in the black theme, in percent. A value below 100 lets
+     * the reader go darker than the lowest brightness of the device, for a dark room.
+     */
+    blackBrightness: number
+    blackTint: BlackTint
     layout: LayoutMode
     /**
      * The id of a font catalogue entry, or 'book:' followed by a font family of the open book.
@@ -74,12 +83,17 @@ export const SETTINGS_VERSION = 1
 
 export const THEME_CHOICES: readonly ThemeChoice[] = ['auto', 'light', 'sepia', 'dark', 'black']
 export const DARK_THEMES: readonly DarkTheme[] = ['dark', 'black']
+export const BLACK_TINTS: readonly BlackTint[] = ['neutral', 'amber', 'red']
 export const LAYOUT_MODES: readonly LayoutMode[] = ['paged', 'scroll']
 export const MARGIN_SIZES: readonly MarginSize[] = ['narrow', 'normal', 'wide']
 export const TEXT_ALIGN_CHOICES: readonly TextAlignChoice[] = ['publisher', 'start', 'justify']
 export const COLUMN_CHOICES: readonly ColumnChoice[] = ['auto', 1, 2]
 export const PAGE_TURN_ANIMATIONS: readonly PageTurnAnimation[] = ['slide', 'fade', 'none']
 export const LIBRARY_SORTS: readonly LibrarySort[] = ['recent', 'added', 'title', 'author']
+
+export const BLACK_BRIGHTNESS_MIN = 20
+export const BLACK_BRIGHTNESS_MAX = 100
+export const BLACK_BRIGHTNESS_STEP = 5
 
 export const FONT_SIZE_MIN = 12
 export const FONT_SIZE_MAX = 40
@@ -121,6 +135,8 @@ export const READING_WPM_STEP = 1
 export const DEFAULT_SETTINGS: Settings = Object.freeze({
     theme: 'auto',
     darkTheme: 'dark',
+    blackBrightness: 100,
+    blackTint: 'neutral',
     layout: 'paged',
     fontId: 'publisher',
     fontSize: 19,
@@ -165,6 +181,11 @@ interface NumberLimits {
     step: number
 }
 
+const BLACK_BRIGHTNESS: NumberLimits = {
+    min: BLACK_BRIGHTNESS_MIN,
+    max: BLACK_BRIGHTNESS_MAX,
+    step: BLACK_BRIGHTNESS_STEP,
+}
 const FONT_SIZE: NumberLimits = { min: FONT_SIZE_MIN, max: FONT_SIZE_MAX, step: FONT_SIZE_STEP }
 const LINE_HEIGHT: NumberLimits = {
     min: LINE_HEIGHT_MIN,
@@ -250,6 +271,9 @@ export function normalizeSettings(raw: unknown): Settings {
     return {
         theme: oneOf(source.theme, THEME_CHOICES) ?? defaults.theme,
         darkTheme: oneOf(source.darkTheme, DARK_THEMES) ?? defaults.darkTheme,
+        blackBrightness:
+            toNumber(source.blackBrightness, BLACK_BRIGHTNESS) ?? defaults.blackBrightness,
+        blackTint: oneOf(source.blackTint, BLACK_TINTS) ?? defaults.blackTint,
         layout: oneOf(source.layout, LAYOUT_MODES) ?? defaults.layout,
         fontId: toText(source.fontId) ?? defaults.fontId,
         fontSize: toNumber(source.fontSize, FONT_SIZE) ?? defaults.fontSize,

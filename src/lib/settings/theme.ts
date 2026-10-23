@@ -1,5 +1,5 @@
 import type { ReadingTheme } from '$lib/types'
-import type { DarkTheme, ThemeChoice } from './schema'
+import type { BlackTint, DarkTheme, ThemeChoice } from './schema'
 
 /** The page background of each theme. `public/theme-init.js` has a copy of these values. */
 export const THEME_PAGE_COLORS: Readonly<Record<ReadingTheme, string>> = {
@@ -24,12 +24,35 @@ export function resolveTheme({ theme, darkTheme, systemDark }: ResolveThemeOptio
     return systemDark ? darkTheme : 'light'
 }
 
-/** Sets `data-theme` on the root element and the colour of the browser interface. */
-export function applyTheme(resolved: ReadingTheme): void {
-    document.documentElement.dataset.theme = resolved
+export interface ApplyThemeOptions {
+    /** The result of `resolveTheme`. */
+    theme: ReadingTheme
+    /** Used only by the black theme. */
+    blackBrightness: number
+    /** Used only by the black theme. */
+    blackTint: BlackTint
+}
+
+/**
+ * Sets `data-theme` on the root element and the colour of the browser interface. In the black
+ * theme it also sets these, and removes them in each other theme:
+ *   data-black-dim and --black-brightness   when the brightness is below 100
+ *   data-black-tint                         when the tint is not neutral
+ * `public/theme-init.js` applies the same rule before the first paint.
+ */
+export function applyTheme({ theme, blackBrightness, blackTint }: ApplyThemeOptions): void {
+    const root = document.documentElement
+    root.dataset.theme = theme
+    const dim = theme === 'black' && blackBrightness < 100
+    const tint = theme === 'black' && blackTint !== 'neutral'
+    root.toggleAttribute('data-black-dim', dim)
+    if (dim) root.style.setProperty('--black-brightness', String(blackBrightness / 100))
+    else root.style.removeProperty('--black-brightness')
+    if (tint) root.dataset.blackTint = blackTint
+    else delete root.dataset.blackTint
     document
         .querySelector('meta[name="theme-color"]')
-        ?.setAttribute('content', THEME_PAGE_COLORS[resolved])
+        ?.setAttribute('content', THEME_PAGE_COLORS[theme])
 }
 
 /** False when the browser has no `matchMedia` (the test environment). */

@@ -9,6 +9,7 @@
  *   - one focus ring for all elements: 2px of --focus-ring with a 2px offset on :focus-visible
  *   - thin scroll bars in --border-strong
  *   - text selection in --rd-selection-bg
+ *   - the black theme darker than the screen, with data-black-dim and --black-brightness
  *
  * CLASSES
  *   .visually-hidden   for text that only a screen reader gets
@@ -38,6 +39,19 @@ html {
     line-height: var(--leading-normal);
     accent-color: var(--accent);
     scrollbar-color: var(--border-strong) transparent;
+}
+
+/*
+ * The black theme for a dark room. The filter multiplies each colour, so black stays black and
+ * all else (text, icons, highlights, images) gets darker by the same amount. The top layer is
+ * not inside the root element, so each dialog and popover gets its own filter. It also keeps
+ * the filter in its close transition. Safari moves a closing dialog out of the top layer at
+ * once, and the dialog is then darker for that short time.
+ * applyTheme in src/lib/settings/theme.ts sets the attribute only in the black theme.
+ */
+:root[data-black-dim],
+[data-black-dim] :is(dialog, [popover]) {
+    filter: brightness(var(--black-brightness, 1));
 }
 
 body {

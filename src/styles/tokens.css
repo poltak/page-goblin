@@ -393,6 +393,27 @@
 }
 
 /*
+ * Warm text for the black theme. applyTheme in src/lib/settings/theme.ts sets data-black-tint on
+ * the root element only in the black theme. The second selector also tints a swatch or a dialog
+ * that has data-theme="black". Each text colour has a ratio of 4.5 or more on each surface
+ * (tokens.test.ts).
+ */
+[data-black-tint='amber'][data-theme='black'],
+[data-black-tint='amber'] [data-theme='black'] {
+    --fg: #cf9a58;
+    --fg-muted: #b5864c;
+    --fg-faint: #a07541;
+}
+
+/* Red text has less green and blue light than amber text. */
+[data-black-tint='red'][data-theme='black'],
+[data-black-tint='red'] [data-theme='black'] {
+    --fg: #ff6a55;
+    --fg-muted: #ee5540;
+    --fg-faint: #e24c36;
+}
+
+/*
  * Tokens that are the same in each theme but point to theme colours. They are set again on each
  * element with data-theme, because var() is resolved on the element that has the declaration.
  */

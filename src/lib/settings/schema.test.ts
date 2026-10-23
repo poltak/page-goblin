@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
+    BLACK_BRIGHTNESS_MAX,
+    BLACK_BRIGHTNESS_MIN,
     DEFAULT_SETTINGS,
     FONT_SIZE_MAX,
     FONT_SIZE_MIN,
@@ -35,6 +37,8 @@ import type { Settings } from './schema'
 const CUSTOM: Settings = {
     theme: 'sepia',
     darkTheme: 'black',
+    blackBrightness: 45,
+    blackTint: 'amber',
     layout: 'scroll',
     fontId: 'literata',
     fontSize: 24,
@@ -73,6 +77,8 @@ describe('DEFAULT_SETTINGS', () => {
         expect(DEFAULT_SETTINGS).toEqual({
             theme: 'auto',
             darkTheme: 'dark',
+            blackBrightness: 100,
+            blackTint: 'neutral',
             layout: 'paged',
             fontId: 'publisher',
             fontSize: 19,
@@ -192,6 +198,7 @@ describe('normalizeSettings', () => {
         it.each([
             ['theme', ['auto', 'light', 'sepia', 'dark', 'black']],
             ['darkTheme', ['dark', 'black']],
+            ['blackTint', ['neutral', 'amber', 'red']],
             ['layout', ['paged', 'scroll']],
             ['margin', ['narrow', 'normal', 'wide']],
             ['textAlign', ['publisher', 'start', 'justify']],
@@ -269,6 +276,19 @@ describe('normalizeSettings', () => {
             {},
             [20],
         ]
+
+        it('blackBrightness: clamps, rounds and rejects values that are not numbers', () => {
+            const brightness = (value: unknown) =>
+                normalizeSettings({ blackBrightness: value }).blackBrightness
+            expect(brightness(20)).toBe(20)
+            expect(brightness(100)).toBe(100)
+            expect(brightness(0)).toBe(BLACK_BRIGHTNESS_MIN)
+            expect(brightness(-10)).toBe(BLACK_BRIGHTNESS_MIN)
+            expect(brightness(150)).toBe(BLACK_BRIGHTNESS_MAX)
+            expect(brightness(47)).toBe(45)
+            expect(brightness(48)).toBe(50)
+            for (const value of notNumbers) expect(brightness(value)).toBe(100)
+        })
 
         it('fontSize: clamps, rounds and rejects values that are not numbers', () => {
             const fontSize = (value: unknown) => normalizeSettings({ fontSize: value }).fontSize

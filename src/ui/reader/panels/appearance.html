@@ -54,6 +54,22 @@
                 <label><input type="radio" name="appearance-darkTheme" value="black" />Black</label>
             </div>
         </div>
+        <div class="field" data-row="black">
+            <label class="slider-row">
+                <span class="slider-label">Brightness</span>
+                <input class="slider" type="range" data-slider="blackBrightness" />
+                <output class="slider-value" data-output="blackBrightness"></output>
+            </label>
+            <span class="field-help">Go darker than the screen allows, for a dark room.</span>
+            <span class="field-label" id="appearance-tint-label">Text colour</span>
+            <div class="segmented" role="radiogroup" aria-labelledby="appearance-tint-label">
+                <label
+                    ><input type="radio" name="appearance-blackTint" value="neutral" />Grey</label
+                >
+                <label><input type="radio" name="appearance-blackTint" value="amber" />Amber</label>
+                <label><input type="radio" name="appearance-blackTint" value="red" />Red</label>
+            </div>
+        </div>
 
         <div class="field">
             <label class="field-label" for="appearance-font">Font</label>

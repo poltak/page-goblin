@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReadingTheme } from '$lib/types'
 import { DARK_THEMES, THEME_CHOICES } from './schema'
 import { createSettingsStore, loadSettings, SETTINGS_STORAGE_KEY } from './store'
-import { resolveTheme, systemPrefersDark, THEME_PAGE_COLORS } from './theme'
+import { applyTheme, resolveTheme, systemPrefersDark, THEME_PAGE_COLORS } from './theme'
 
 const source = readFileSync(
     resolve(dirname(fileURLToPath(import.meta.url)), '../../../public/theme-init.js'),
@@ -29,6 +29,37 @@ function appTheme(): ReadingTheme {
     return resolveTheme({ theme, darkTheme, systemDark: systemPrefersDark() })
 }
 
+/** The attributes and the style of the root element that a theme sets. */
+function rootState() {
+    const root = document.documentElement
+    return {
+        theme: root.dataset.theme,
+        dim: root.hasAttribute('data-black-dim'),
+        brightness: root.style.getPropertyValue('--black-brightness'),
+        tint: root.dataset.blackTint,
+    }
+}
+
+function clearRoot(): void {
+    const root = document.documentElement
+    for (const name of ['data-theme', 'data-black-dim', 'data-black-tint', 'style']) {
+        root.removeAttribute(name)
+    }
+}
+
+/** The root state that the app gives for the same storage and the same system preference. */
+function appRootState() {
+    const before = rootState()
+    clearRoot()
+    const { blackBrightness, blackTint } = loadSettings()
+    applyTheme({ theme: appTheme(), blackBrightness, blackTint })
+    const state = rootState()
+    clearRoot()
+    const root = document.documentElement
+    if (before.theme) root.dataset.theme = before.theme
+    return state
+}
+
 function expectPageTheme(theme: ReadingTheme): void {
     expect(document.documentElement.getAttribute('data-theme')).toBe(theme)
     expect(document.querySelector('meta[name="theme-color"]')?.getAttribute('content')).toBe(
@@ -44,7 +75,7 @@ afterEach(() => {
     vi.unstubAllGlobals()
     localStorage.clear()
     document.head.innerHTML = ''
-    delete document.documentElement.dataset.theme
+    clearRoot()
 })
 
 describe('public/theme-init.js', () => {
@@ -69,6 +100,37 @@ describe('public/theme-init.js', () => {
             expect(appTheme()).toBe(resolveTheme({ theme, darkTheme, systemDark }))
         },
     )
+
+    it.each([
+        { theme: 'black', blackBrightness: 40, blackTint: 'amber' },
+        { theme: 'black', blackBrightness: 100, blackTint: 'red' },
+        { theme: 'black', blackBrightness: 20, blackTint: 'neutral' },
+        { theme: 'dark', blackBrightness: 40, blackTint: 'amber' },
+        { theme: 'auto', darkTheme: 'black', blackBrightness: 55, blackTint: 'red' },
+    ] as const)('sets the black brightness and tint of the app for %o', (patch) => {
+        const store = createSettingsStore()
+        store.update(patch)
+        store.destroy()
+        stubSystemDark(true)
+
+        runThemeInit()
+
+        expect(rootState()).toEqual(appRootState())
+    })
+
+    it('dims and tints the black theme before the first paint', () => {
+        localStorage.setItem(
+            SETTINGS_STORAGE_KEY,
+            '{"theme":"black","blackBrightness":35,"blackTint":"amber"}',
+        )
+        runThemeInit()
+        expect(rootState()).toEqual({
+            theme: 'black',
+            dim: true,
+            brightness: '0.35',
+            tint: 'amber',
+        })
+    })
 
     const storedTexts = [
         null,
@@ -98,6 +160,12 @@ describe('public/theme-init.js', () => {
         '{"version":0,"theme":"sepia"}',
         '{"version":99,"theme":"black","darkTheme":"dark"}',
         '{"rsvp":{"theme":"dark"}}',
+        '{"theme":"black","blackBrightness":"40","blackTint":"Amber"}',
+        '{"theme":"black","blackBrightness":-5,"blackTint":"blue"}',
+        '{"theme":"black","blackBrightness":47,"blackTint":"neutral"}',
+        '{"theme":"black","blackBrightness":1e9}',
+        '{"theme":"black","blackBrightness":null,"blackTint":null}',
+        '{"theme":"sepia","blackBrightness":30,"blackTint":"red"}',
     ]
 
     it.each(
@@ -113,6 +181,7 @@ describe('public/theme-init.js', () => {
             runThemeInit()
 
             expectPageTheme(appTheme())
+            expect(rootState()).toEqual(appRootState())
         },
     )
 

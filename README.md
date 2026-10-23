@@ -11,7 +11,7 @@ The app is plain HTML, CSS and TypeScript. It has no UI library and no runtime n
 - **Library.** Add EPUB files with the file dialog, with a drop on the window, or with "Open with" in the installed app. Sort, search, see details, remove.
 - **Paged view.** Swipe, tap, use the keys or the wheel to turn the page. The page follows the finger. Wide screens show two columns.
 - **Scroll view.** One continuous column through the whole book.
-- **Themes.** Light, sepia, dark, and black for OLED screens. "Auto" follows the system.
+- **Themes.** Light, sepia, dark, and black for OLED screens. "Auto" follows the system. For a dark room, the black theme can go darker than the lowest brightness of the screen and can show amber or red text.
 - **Fonts.** 14 bundled open-licence families, system fonts, the fonts that the book embeds, and your own fonts (TTF, OTF, WOFF or WOFF2 files). You can set the size, line height, margins, alignment and hyphenation.
 - **Bookmarks and highlights.** Five highlight colours, with notes.
 - **Search.** Search the whole book and see each match in its context.

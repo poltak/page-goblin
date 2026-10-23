@@ -155,3 +155,37 @@ describe.each(Object.entries(themes))('contrast in the %s theme', (_name, t) => 
         }
     })
 })
+
+describe.each(['amber', 'red'])('the %s text of the black theme', (tint) => {
+    const own = block(`[data-black-tint='${tint}']`)
+    const t: Tokens = { ...themes.black, ...own }
+    const solid = (name: string) => parse(t[name]).rgb
+    const surfaces = ['--bg', '--surface', '--surface-raised'].map(solid)
+    const text = ['--fg', '--fg-muted', '--fg-faint']
+
+    it('changes only the text colours', () => {
+        expect(Object.keys(own).sort()).toEqual([...text].sort())
+    })
+
+    it('has readable text on each surface and fill', () => {
+        for (const surface of surfaces) {
+            for (const name of text) {
+                expect(contrast(solid(name), surface), name).toBeGreaterThanOrEqual(4.5)
+            }
+            expect(contrast(solid('--fg-muted'), over(t['--fill'], surface))).toBeGreaterThan(4.5)
+            expect(contrast(solid('--fg'), over(t['--fill-strong'], surface))).toBeGreaterThan(4.5)
+        }
+    })
+
+    it('keeps book text readable on each mark', () => {
+        const page = solid('--bg')
+        const marks = [
+            '--rd-selection-bg',
+            '--rd-active-bg',
+            ...HIGHLIGHTS.map((colour) => `--rd-hl-${colour}`),
+        ]
+        for (const name of marks) {
+            expect(contrast(solid('--fg'), over(t[name], page)), name).toBeGreaterThanOrEqual(4.5)
+        }
+    })
+})

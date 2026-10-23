@@ -9,6 +9,10 @@
 import { groupedFontEntries, PUBLISHER_FONT_ID, resolveFontStack } from '$lib/fonts'
 import {
     settings as appSettings,
+    BLACK_BRIGHTNESS_MAX,
+    BLACK_BRIGHTNESS_MIN,
+    BLACK_BRIGHTNESS_STEP,
+    BLACK_TINTS,
     COLUMN_CHOICES,
     DARK_THEMES,
     DEFAULT_SETTINGS,
@@ -21,6 +25,8 @@ import {
     LINE_HEIGHT_STEP,
     MARGIN_SIZES,
     PAGE_TURN_ANIMATIONS,
+    resolveTheme,
+    systemPrefersDark,
     TEXT_ALIGN_CHOICES,
     THEME_CHOICES,
 } from '$lib/settings'
@@ -39,6 +45,7 @@ const RADIO_PREFIX = 'appearance-'
 const CHOICES = {
     theme: THEME_CHOICES,
     darkTheme: DARK_THEMES,
+    blackTint: BLACK_TINTS,
     margin: MARGIN_SIZES,
     textAlign: TEXT_ALIGN_CHOICES,
     layout: LAYOUT_MODES,
@@ -65,6 +72,8 @@ type SwitchKey = (typeof SWITCH_KEYS)[number]
 export const APPEARANCE_KEYS = [
     'theme',
     'darkTheme',
+    'blackBrightness',
+    'blackTint',
     'layout',
     'fontId',
     'fontSize',
@@ -111,6 +120,7 @@ export function createAppearancePanel(options: AppearancePanelOptions): Appearan
     const body = qs('.sheet-body', dialog)
     const row = (name: string) => qs(`[data-row="${name}"]`, dialog)
     const darkThemeRow = row('darkTheme')
+    const blackRow = row('black')
     const columnsRow = row('columns')
     const pageTurnRow = row('pageTurn')
     const autoDarkHalf = qs('.appearance-chip-auto > :last-child', dialog)
@@ -122,6 +132,8 @@ export function createAppearancePanel(options: AppearancePanelOptions): Appearan
     const lineSwitch = qs<HTMLInputElement>('[data-switch="lineHeight"]', dialog)
     const lineSlider = qs<HTMLInputElement>('[data-slider="lineHeight"]', dialog)
     const lineOutput = qs('[data-output="lineHeight"]', dialog)
+    const brightnessSlider = qs<HTMLInputElement>('[data-slider="blackBrightness"]', dialog)
+    const brightnessOutput = qs('[data-output="blackBrightness"]', dialog)
 
     const radios = new Map(
         CHOICE_KEYS.map((key) => [
@@ -172,6 +184,12 @@ export function createAppearancePanel(options: AppearancePanelOptions): Appearan
         setRangeValue(lineSlider)
     }
 
+    function showBrightness(brightness: number): void {
+        brightnessOutput.textContent = `${brightness}%`
+        brightnessSlider.value = String(brightness)
+        setRangeValue(brightnessSlider)
+    }
+
     /** Sets each control from the store. */
     function sync(): void {
         const current = store.get()
@@ -182,6 +200,9 @@ export function createAppearancePanel(options: AppearancePanelOptions): Appearan
         for (const key of SWITCH_KEYS) switches.get(key)!.checked = current[key]
 
         darkThemeRow.hidden = current.theme !== 'auto'
+        const { theme, darkTheme } = current
+        blackRow.hidden =
+            resolveTheme({ theme, darkTheme, systemDark: systemPrefersDark() }) !== 'black'
         // The Auto swatch shows the dark theme that the system setting gives.
         autoDarkHalf.dataset.theme = current.darkTheme
         columnsRow.hidden = current.layout !== 'paged'
@@ -194,6 +215,7 @@ export function createAppearancePanel(options: AppearancePanelOptions): Appearan
             null
         fontSelect.value = known ? current.fontId : PUBLISHER_FONT_ID
 
+        showBrightness(current.blackBrightness)
         showSize(current.fontSize)
         lineSwitch.checked = current.lineHeight === null
         lineSlider.disabled = current.lineHeight === null
@@ -241,6 +263,9 @@ export function createAppearancePanel(options: AppearancePanelOptions): Appearan
         } else if (slider === lineSlider) {
             showLineHeight(value)
             sendSoon({ lineHeight: value })
+        } else if (slider === brightnessSlider) {
+            showBrightness(value)
+            sendSoon({ blackBrightness: value })
         }
     }
 
@@ -340,6 +365,9 @@ export function createAppearancePanel(options: AppearancePanelOptions): Appearan
     lineSlider.min = String(LINE_HEIGHT_MIN)
     lineSlider.max = String(LINE_HEIGHT_MAX)
     lineSlider.step = String(LINE_HEIGHT_STEP)
+    brightnessSlider.min = String(BLACK_BRIGHTNESS_MIN)
+    brightnessSlider.max = String(BLACK_BRIGHTNESS_MAX)
+    brightnessSlider.step = String(BLACK_BRIGHTNESS_STEP)
     showLineHeight(DEFAULT_SETTINGS.lineHeight ?? LINE_HEIGHT_FALLBACK)
     buildFontMenu()
     sync()

@@ -29,7 +29,9 @@ let store: OwnedSettingsStore
 
 beforeEach(() => {
     document.head.innerHTML = '<meta name="theme-color" content="#fbfaf8" />'
-    delete root.dataset.theme
+    for (const name of ['data-theme', 'data-black-dim', 'data-black-tint', 'style']) {
+        root.removeAttribute(name)
+    }
     store = createSettingsStore({ storage: null })
 })
 
@@ -63,6 +65,22 @@ describe('connectTheme', () => {
 
         system.set(true)
         expect(root.dataset.theme).toBe('black')
+    })
+
+    it('applies a change of the black brightness and tint', () => {
+        stubSystemTheme(false)
+        store.update({ theme: 'black' })
+        connectTheme(store)
+        expect(root.hasAttribute('data-black-dim')).toBe(false)
+
+        store.update({ blackBrightness: 40, blackTint: 'amber' })
+        expect(root.hasAttribute('data-black-dim')).toBe(true)
+        expect(root.style.getPropertyValue('--black-brightness')).toBe('0.4')
+        expect(root.dataset.blackTint).toBe('amber')
+
+        store.update({ theme: 'sepia' })
+        expect(root.hasAttribute('data-black-dim')).toBe(false)
+        expect(root.dataset.blackTint).toBeUndefined()
     })
 
     it('applies a change of the theme setting', () => {
